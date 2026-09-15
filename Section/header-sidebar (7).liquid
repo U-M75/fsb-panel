@@ -1,0 +1,912 @@
+<!-- Section File Name: floating-sidebar.liquid -->
+<!-- Section Name: Floating Quick Sidebar -->
+<!-- Presets Name: Floating Quick Sidebar -->
+{% if section.settings.hide_theme_header %}
+  <!-- This must come before the external mobile-menu stylesheet. Keeping it
+       first prevents the normal theme header from painting during refresh. -->
+  <style id="fsb-header-no-flash-{{ section.id }}">
+    .header-section,
+    #shopify-section-header,
+    [id^="shopify-section-"][class*="header-section"]{
+      display:none !important;
+      visibility:hidden !important;
+      opacity:0 !important;
+      pointer-events:none !important;
+      position:fixed !important;
+      width:0 !important;
+      height:0 !important;
+      min-height:0 !important;
+      margin:0 !important;
+      padding:0 !important;
+      overflow:hidden !important;
+    }
+  </style>
+{% endif %}
+{% if section.settings.use_theme_mobile_menu %}
+  {{- 'mobile-menu.css' | asset_url | stylesheet_tag -}}
+{% endif %}
+{% assign fsb_sidebar_span = section.settings.icon_size | plus: section.settings.horizontal_padding | plus: section.settings.horizontal_padding | plus: section.settings.edge_offset %}
+<style id="fsb-critical-{{ section.id }}">
+  {% if section.settings.hide_theme_header %}
+  /* Critical header suppression: declared in the first style block so the
+     theme header never occupies visible layout while this section loads. */
+  .header-section,
+  #shopify-section-header,
+  [id^="shopify-section-"][class*="header-section"]{
+    display:none !important;
+    visibility:hidden !important;
+    opacity:0 !important;
+    pointer-events:none !important;
+    height:0 !important;
+    min-height:0 !important;
+    margin:0 !important;
+    padding:0 !important;
+    overflow:hidden !important;
+  }
+  {% endif %}
+  {% if section.settings.position == 'left' %}
+  :root{ --fsb-hide: -110%; --fsb-sidebar-span: {{ fsb_sidebar_span }}px; --fsb-panel-width: {{ section.settings.panel_width | default: 400 }}px; }
+  {% else %}
+  :root{ --fsb-hide: 110%; --fsb-sidebar-span: {{ fsb_sidebar_span }}px; --fsb-panel-width: {{ section.settings.panel_width | default: 400 }}px; }
+  {% endif %}
+  #sid-{{ section.id }} .fsb-container{
+    position: fixed;
+    top: 0;
+    {% if section.settings.position == 'left' %}left: {{ section.settings.edge_offset }}px;{% else %}right: {{ section.settings.edge_offset }}px;{% endif %}
+    height: 100vh;
+    z-index: 1003;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: {{ section.settings.bg_color }};
+    padding: {{ section.settings.vertical_padding }}px {{ section.settings.horizontal_padding }}px;
+    box-sizing: border-box;
+  }
+  #sid-{{ section.id }} .fsb-group{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: {{ section.settings.item_gap }}px;
+    flex-shrink: 0;
+  }
+  #sid-{{ section.id }} .fsb-logo-wrap{
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    min-height: 0;
+  }
+  #sid-{{ section.id }} .fsb-item{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: {{ section.settings.icon_size }}px;
+    height: {{ section.settings.icon_size }}px;
+    color: {{ section.settings.icon_color }};
+    background: transparent;
+    border: none;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  #sid-{{ section.id }} .fsb-item svg,
+  #sid-{{ section.id }} .fsb-drive-icon{
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  #sid-{{ section.id }} .fsb-logo{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: {{ section.settings.logo_size }}px;
+    height: {{ section.settings.logo_size }}px;
+    overflow: hidden;
+  }
+  #sid-{{ section.id }} .mobile-icon-title{ display: none; }
+  .fsb-panel-overlay{
+    position: fixed;
+    inset: 0;
+    z-index: 1001;
+    pointer-events: none;
+  }
+  .fsb-side-panel{
+    position: fixed;
+    top: 0;
+    width: var(--fsb-panel-width);
+    max-width: calc(100vw - 90px);
+    height: 100vh;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    z-index: 1002;
+    pointer-events: none;
+    {% if section.settings.position == 'left' %}
+    left: var(--fsb-sidebar-span);
+    right: auto;
+    transform: translateX(-110%);
+    {% else %}
+    right: var(--fsb-sidebar-span);
+    left: auto;
+    transform: translateX(110%);
+    {% endif %}
+  }
+  .fsb-side-panel.active{
+    transform: translateX(0);
+    pointer-events: auto;
+  }
+  .cart-drawer{
+    position: fixed !important;
+    top: 0 !important;
+    width: var(--fsb-panel-width, 400px) !important;
+    max-width: calc(100vw - 90px) !important;
+    height: 100vh !important;
+    z-index: 1002 !important;
+    pointer-events: none !important;
+    {% if section.settings.position == 'left' %}
+    left: var(--fsb-sidebar-span) !important;
+    right: auto !important;
+    transform: translateX(-110%) !important;
+    {% else %}
+    right: var(--fsb-sidebar-span) !important;
+    left: auto !important;
+    transform: translateX(110%) !important;
+    {% endif %}
+  }
+  .cart-drawer.active{
+    transform: translateX(0) !important;
+    pointer-events: auto !important;
+  }
+  @media only screen and (max-width: 767px){
+    #sid-{{ section.id }} .fsb-container{
+      left: 16px;
+      right: 16px;
+      bottom: 4px;
+      top: auto;
+      width: auto;
+      height: 74px;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 22px;
+      border-radius: 40px;
+      background: #fff;
+      box-sizing: border-box;
+    }
+    #sid-{{ section.id }} .fsb-group{
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+    }
+    #sid-{{ section.id }} .fsb-logo-wrap{ display: contents; }
+    #sid-{{ section.id }} .fsb-group-top,
+    #sid-{{ section.id }} .fsb-group-bottom{ display: contents; }
+    #sid-{{ section.id }} .fsb-item,
+    #sid-{{ section.id }} .thb-secondary-area-item{
+      width: auto;
+      height: 49px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+    }
+    #sid-{{ section.id }} .fsb-item > .fsb-drive-icon,
+    #sid-{{ section.id }} .thb-secondary-item-icon > .fsb-drive-icon,
+    #sid-{{ section.id }} .fsb-logo > .fsb-drive-icon{
+      width: 32px !important;
+      height: 32px !important;
+      max-width: 32px !important;
+      max-height: 32px !important;
+    }
+    .fsb-side-panel,
+    .cart-drawer{
+      left: 0 !important;
+      right: 0 !important;
+      top: auto !important;
+      bottom: 0 !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      height: 88vh !important;
+      transform: translateY(100%) !important;
+      border-radius: 18px 18px 0 0 !important;
+    }
+    .fsb-side-panel.active,
+    .cart-drawer.active{
+      transform: translateY(0) !important;
+      pointer-events: auto !important;
+    }
+  }
+</style>
+
+{% render 'fsb-sidebar', section: section %}
+{% render 'fsb-panels',  section: section %}
+{% render 'fsb-styles',  section: section %}
+{% render 'fsb-data',    section: section %}
+{% render 'fsb-scripts', section: section %}
+
+{% schema %}
+{
+  "name": "Floating Quick Sidebar",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Position"
+    },
+    {
+      "type": "select",
+      "id": "position",
+      "label": "Screen Side",
+      "options": [
+        { "value": "left", "label": "Left" },
+        { "value": "right", "label": "Right" }
+      ],
+      "default": "left"
+    },
+    {
+      "type": "range",
+      "id": "edge_offset",
+      "min": 0,
+      "max": 60,
+      "step": 1,
+      "unit": "px",
+      "label": "Edge Offset (Desktop)",
+      "default": 0
+    },
+    {
+      "type": "range",
+      "id": "edge_offset_mb",
+      "min": 0,
+      "max": 40,
+      "step": 1,
+      "unit": "px",
+      "label": "Edge Offset (Mobile)",
+      "default": 0
+    },
+    {
+      "type": "checkbox",
+      "id": "show_on_mobile",
+      "label": "Show on Mobile",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "hide_theme_header",
+      "label": "Hide the theme's header on screen",
+      "default": false,
+      "info": "Keep the Header section ENABLED in the theme editor — this only hides it visually (no space, no clicks), so the sidebar can still show the header's mobile menu. If the Header section is disabled/removed, the sidebar falls back to the simple link-list menu."
+    },
+    {
+      "type": "header",
+      "content": "Container Style"
+    },
+    {
+      "type": "color",
+      "id": "bg_color",
+      "label": "Background Color",
+      "default": "#ffffff"
+    },
+    {
+      "type": "range",
+      "id": "radius",
+      "min": 0,
+      "max": 50,
+      "step": 1,
+      "unit": "px",
+      "label": "Outer Corner Radius",
+      "default": 0
+    },
+    {
+      "type": "range",
+      "id": "vertical_padding",
+      "min": 0,
+      "max": 60,
+      "step": 1,
+      "unit": "px",
+      "label": "Top/Bottom Padding (Desktop)",
+      "default": 28
+    },
+    {
+      "type": "range",
+      "id": "horizontal_padding",
+      "min": 0,
+      "max": 40,
+      "step": 1,
+      "unit": "px",
+      "label": "Left/Right Padding (Desktop)",
+      "default": 14
+    },
+    {
+      "type": "range",
+      "id": "vertical_padding_mb",
+      "min": 0,
+      "max": 40,
+      "step": 1,
+      "unit": "px",
+      "label": "Top/Bottom Padding (Mobile)",
+      "default": 18
+    },
+    {
+      "type": "range",
+      "id": "horizontal_padding_mb",
+      "min": 0,
+      "max": 30,
+      "step": 1,
+      "unit": "px",
+      "label": "Left/Right Padding (Mobile)",
+      "default": 10
+    },
+    {
+      "type": "range",
+      "id": "item_gap",
+      "min": 4,
+      "max": 40,
+      "step": 1,
+      "unit": "px",
+      "label": "Icon Spacing (Desktop)",
+      "default": 22
+    },
+    {
+      "type": "range",
+      "id": "item_gap_mb",
+      "min": 4,
+      "max": 30,
+      "step": 1,
+      "unit": "px",
+      "label": "Icon Spacing (Mobile)",
+      "default": 16
+    },
+    {
+      "type": "header",
+      "content": "Icon Style"
+    },
+    {
+      "type": "color",
+      "id": "icon_color",
+      "label": "Icon Color",
+      "default": "#333333"
+    },
+    {
+      "type": "color",
+      "id": "icon_hover_color",
+      "label": "Icon Hover Color",
+      "default": "#000000"
+    },
+    {
+      "type": "color",
+      "id": "active_icon_color",
+      "label": "Active Icon Color (open drawer)",
+      "default": "#c79a3c"
+    },
+    {
+      "type": "color",
+      "id": "active_bg_color",
+      "label": "Active Icon Background (open drawer)",
+      "default": "#fbf5ea"
+    },
+    {
+      "type": "range",
+      "id": "icon_size",
+      "min": 14,
+      "max": 40,
+      "step": 1,
+      "unit": "px",
+      "label": "Icon Size (Desktop)",
+      "default": 22
+    },
+    {
+      "type": "header",
+      "content": "Side Panel"
+    },
+    {
+      "type": "range",
+      "id": "panel_width",
+      "min": 300,
+      "max": 540,
+      "step": 10,
+      "unit": "px",
+      "label": "Panel Width (Desktop)",
+      "default": 400
+    },
+    {
+      "type": "header",
+      "content": "Center Logo Badge"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_logo",
+      "label": "Show Logo Badge",
+      "default": true
+    },
+    {
+      "type": "image_picker",
+      "id": "logo_image",
+      "label": "Logo Image (optional, overrides text)"
+    },
+    {
+      "type": "text",
+      "id": "logo_text",
+      "label": "Logo Text",
+      "default": "N+"
+    },
+    {
+      "type": "url",
+      "id": "logo_link",
+      "label": "Logo Link"
+    },
+    {
+      "type": "range",
+      "id": "logo_mobile_order",
+      "label": "Logo Mobile Order",
+      "min": 0,
+      "max": 10,
+      "default": 2
+    },
+    {
+      "type": "range",
+      "id": "account_mobile_order",
+      "label": "Account Mobile Order",
+      "min": 0,
+      "max": 10,
+      "default": 1
+    },
+    {
+      "type": "text",
+      "id": "account_text",
+      "label": "Account Mobile Label",
+      "default": "Account"
+    },
+    {
+      "type": "color",
+      "id": "logo_bg_color",
+      "label": "Logo Background Color",
+      "default": "#1a1a1a"
+    },
+    {
+      "type": "color",
+      "id": "logo_text_color",
+      "label": "Logo Text Color",
+      "default": "#ffffff"
+    },
+    {
+      "type": "range",
+      "id": "logo_size",
+      "min": 24,
+      "max": 60,
+      "step": 1,
+      "unit": "px",
+      "label": "Logo Size (Desktop)",
+      "default": 36
+    },
+    {
+      "type": "range",
+      "id": "logo_size_mb",
+      "min": 20,
+      "max": 50,
+      "step": 1,
+      "unit": "px",
+      "label": "Logo Size (Mobile)",
+      "default": 30
+    },
+    {
+      "type": "range",
+      "id": "logo_radius",
+      "min": 0,
+      "max": 30,
+      "step": 1,
+      "unit": "px",
+      "label": "Logo Corner Radius",
+      "default": 10
+    },
+    {
+      "type": "header",
+      "content": "Icon 1 (Top)"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_icon_1",
+      "label": "Show",
+      "default": true
+    },
+    {
+      "type": "url",
+      "id": "icon_1_link",
+      "label": "Link"
+    },
+    {
+      "type": "range",
+      "id": "home_mobile_order",
+      "label": "Home Mobile Order",
+      "min": 0,
+      "max": 10,
+      "default": 1
+    },
+    {
+      "type": "text",
+      "id": "home_text",
+      "label": "Home Mobile Label",
+      "default": "Home"
+    },
+    {
+      "type": "header",
+      "content": "Icon 2 (Cart)"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_icon_2",
+      "label": "Show",
+      "default": true
+    },
+    {
+      "type": "url",
+      "id": "icon_2_link",
+      "label": "Link"
+    },
+    {
+      "type": "range",
+      "id": "cart_mobile_order",
+      "label": "Cart Mobile Order",
+      "min": 0,
+      "max": 10,
+      "default": 3
+    },
+    {
+      "type": "text",
+      "id": "cart_text",
+      "label": "Cart Mobile Label",
+      "default": "Cart"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_cart_count",
+      "label": "Show Cart Item Count",
+      "default": true
+    },
+    {
+      "type": "header",
+      "content": "Icon 3 (Support)"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_icon_3",
+      "label": "Show",
+      "default": true
+    },
+    {
+      "type": "url",
+      "id": "icon_3_link",
+      "label": "Link"
+    },
+    {
+      "type": "range",
+      "id": "headphone_mobile_order",
+      "label": "Support Mobile Order",
+      "min": 0,
+      "max": 10,
+      "default": 4
+    },
+    {
+      "type": "text",
+      "id": "headphone_text",
+      "label": "Support Mobile Label",
+      "default": "Support"
+    },
+    {
+      "type": "header",
+      "content": "Icon 4 (Notifications)"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_icon_4",
+      "label": "Show",
+      "default": true
+    },
+    {
+      "type": "url",
+      "id": "icon_4_link",
+      "label": "Link"
+    },
+    {
+      "type": "range",
+      "id": "notification_mobile_order",
+      "label": "Notification Mobile Order",
+      "min": 0,
+      "max": 10,
+      "default": 5
+    },
+    {
+      "type": "text",
+      "id": "notification_text",
+      "label": "Notification Mobile Label",
+      "default": "Notification"
+    },
+    {
+      "type": "header",
+      "content": "Icon 5 (Language)"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_icon_5",
+      "label": "Show",
+      "default": true
+    },
+    {
+      "type": "url",
+      "id": "icon_5_link",
+      "label": "Link"
+    },
+    {
+      "type": "range",
+      "id": "globe_mobile_order",
+      "label": "Language Mobile Order",
+      "min": 0,
+      "max": 10,
+      "default": 6
+    },
+    {
+      "type": "text",
+      "id": "globe_text",
+      "label": "Language Mobile Label",
+      "default": "Language"
+    },
+    {
+      "type": "header",
+      "content": "Icon 6 (Menu)"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_icon_6",
+      "label": "Show",
+      "default": true
+    },
+    {
+      "type": "link_list",
+      "id": "menu_list",
+      "label": "Menu to display"
+    },
+    {
+      "type": "link_list",
+      "id": "mobile_menu_list",
+      "label": "Menu to display (Mobile)",
+      "info": "Optional — pick a different menu to show only on mobile (below 767px). Leave blank to reuse the desktop menu above."
+    },
+    {
+      "type": "checkbox",
+      "id": "use_theme_mobile_menu",
+      "label": "Use the theme's mobile menu",
+      "default": true,
+      "info": "Shows the exact same menu as the header hamburger inside this panel — same links, child links, mega-menu blocks, images, badges, login/register and track-order links. If disabled, the fallback menu built from the link lists above is used."
+    },
+    {
+      "type": "range",
+      "id": "menu_mobile_order",
+      "label": "Menu Mobile Order",
+      "min": 0,
+      "max": 10,
+      "default": 1
+    },
+    {
+      "type": "text",
+      "id": "menu_text",
+      "label": "Menu Mobile Label",
+      "default": "Menu"
+    },
+    {
+      "type": "header",
+      "content": "Copyright Settings"
+    },
+    {
+      "type": "header",
+      "content": "Heading Settings"
+    },
+    {
+      "type": "text",
+      "id": "copyright_text",
+      "label": "Add Copyright Heading",
+      "default": "nextCIGAR © 2025"
+    },
+    {
+      "type": "color",
+      "id": "copyright_heading_color",
+      "label": "Heading Color",
+      "default": "#A6A5A0"
+    },
+    {
+      "type": "range",
+      "id": "copyright_heading_size",
+      "label": "Heading Font Size",
+      "min": 10,
+      "max": 50,
+      "step": 1,
+      "unit": "px",
+      "default": 16
+    },
+    {
+      "type": "select",
+      "id": "copyright_heading_transform",
+      "label": "Heading Text Transform",
+      "default": "none",
+      "options": [
+        { "value": "none", "label": "None" },
+        { "value": "uppercase", "label": "Uppercase" },
+        { "value": "lowercase", "label": "Lowercase" },
+        { "value": "capitalize", "label": "Capitalize" }
+      ]
+    },
+    {
+      "type": "header",
+      "content": "Copyright description"
+    },
+    {
+      "type": "text",
+      "id": "copyright_description",
+      "label": "Add Copyright description",
+      "default": "Premium Cigars Since 2009"
+    },
+    {
+      "type": "color",
+      "id": "copyright_description_color",
+      "label": "Description Color",
+      "default": "#A6A5A0"
+    },
+    {
+      "type": "range",
+      "id": "copyright_description_size",
+      "label": "Description Font Size",
+      "min": 10,
+      "max": 50,
+      "step": 1,
+      "unit": "px",
+      "default": 14
+    },
+    {
+      "type": "select",
+      "id": "copyright_description_transform",
+      "label": "Description Text Transform",
+      "default": "none",
+      "options": [
+        { "value": "none", "label": "None" },
+        { "value": "uppercase", "label": "Uppercase" },
+        { "value": "lowercase", "label": "Lowercase" },
+        { "value": "capitalize", "label": "Capitalize" }
+      ]
+    },
+    {
+      "type": "header",
+      "content": "Points, Rewards, Orders, Address"
+    },
+    {
+      "type": "url",
+      "id": "points_link",
+      "label": "Points Link"
+    },
+    {
+      "type": "range",
+      "id": "points_mobile_order",
+      "label": "Points Mobile Order",
+      "min": 0,
+      "max": 10,
+      "default": 7
+    },
+    {
+      "type": "text",
+      "id": "points_text",
+      "label": "Points Mobile Label",
+      "default": "Points"
+    },
+    {
+      "type": "url",
+      "id": "rewards_link",
+      "label": "Rewards Link"
+    },
+    {
+      "type": "range",
+      "id": "rewards_mobile_order",
+      "label": "Rewards Mobile Order",
+      "min": 0,
+      "max": 10,
+      "default": 8
+    },
+    {
+      "type": "text",
+      "id": "rewards_text",
+      "label": "Rewards Mobile Label",
+      "default": "Rewards"
+    },
+    {
+      "type": "text",
+      "id": "bon_api_base",
+      "label": "BON Loyalty API base URL (advanced)",
+      "info": "Points/rewards/tiers/history are read live from the BON customer metafields (recommended) and from any BON widget on the page — no API is required. BON's real GraphQL API needs a secret server-side token, so a theme alone cannot call it securely. Leave this blank."
+    },
+    {
+      "type": "text",
+      "id": "klaviyo_public_key",
+      "label": "Klaviyo public API key (site ID, e.g. AbCdEf)",
+      "info": "Optional. Needed only if you want the marketing toggle to also subscribe/unsubscribe in Klaviyo. Find it in Klaviyo → Settings → API keys (Public API Key)."
+    },
+    {
+      "type": "url",
+      "id": "bon_loyalty_page",
+      "label": "BON Loyalty page URL",
+      "info": "Optional. The page where the BON Loyalty app blocks (Profile / Rewards) are embedded, e.g. /pages/rewards. Used as the redemption target when a member taps Redeem, and its live widget is read automatically for the real point balance."
+    },
+    {
+      "type": "url",
+      "id": "orders_link",
+      "label": "Orders Link"
+    },
+    {
+      "type": "range",
+      "id": "orders_mobile_order",
+      "label": "Orders Mobile Order",
+      "min": 0,
+      "max": 10,
+      "default": 9
+    },
+    {
+      "type": "text",
+      "id": "orders_text",
+      "label": "Orders Mobile Label",
+      "default": "Orders"
+    },
+    {
+      "type": "url",
+      "id": "address_link",
+      "label": "Address Link"
+    },
+    {
+      "type": "range",
+      "id": "address_mobile_order",
+      "label": "Address Mobile Order",
+      "min": 0,
+      "max": 10,
+      "default": 10
+    },
+    {
+      "type": "text",
+      "id": "address_text",
+      "label": "Address Mobile Label",
+      "default": "Address"
+    },
+    {
+      "type": "header",
+      "content": "Automatic Sale Notification"
+    },
+    {
+      "type": "checkbox",
+      "id": "enable_sale_notification",
+      "label": "Enable automatic sale notification",
+      "info": "Shows and hides itself automatically based on the collection below",
+      "default": false
+    },
+    {
+      "type": "collection",
+      "id": "sale_collection",
+      "label": "Sale collection"
+    },
+    {
+      "type": "text",
+      "id": "sale_badge_label",
+      "label": "Badge label (optional)",
+      "default": "SALE"
+    },
+    {
+      "type": "text",
+      "id": "sale_title",
+      "label": "Title",
+      "default": "Sale is Live!"
+    },
+    {
+      "type": "textarea",
+      "id": "sale_message",
+      "label": "Custom message (optional)"
+    }
+  ],
+  "presets": [
+    {
+      "name": "Floating Quick Sidebar"
+    }
+  ]
+}
+{% endschema %}

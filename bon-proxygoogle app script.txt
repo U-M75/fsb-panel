@@ -1,0 +1,1078 @@
+/**
+ * ============================================================
+ * nextCIGAR — BON Loyalty API Proxy (Google Apps Script) v14
+ * ============================================================
+ * The BON API token is stored in Script Properties:
+ *   Property name:  BON_API_TOKEN
+ *   Property value: <Production Access Token (content of the .txt file)>
+ * (Apps Script -> Project Settings -> Script Properties)
+ *
+ * v16 — REDEEM PINNED (from BON's official API docs):
+ *   redemption now uses the DOCUMENTED mutation
+ *     mutation { createDiscount(input:{redeem_id, shopify_id, ... }){
+ *       discount_code discount_value current_point ends_at reward_name } }
+ *   Fixed rules: just { redeem_id, shopify_id }.
+ *   Increment rules (calculate_type = 2): + reward_value + money_value
+ *   (taken from the rule automatically).
+ *
+ * v15 — MUTATION PROBE: testMutationProbe() lists every redeem-capable
+ *   mutation YOUR BON plan accepts (GraphQL introspection — no guessing).
+ *   Run it in the editor and send the log to the developer.
+ *
+ * v14 — REDEEM ENDPOINT (per BON support's flow):
+ *   doGet with ?action=redeem&shopify_id=..&email=..&reward_id=..
+ *   asks the BON API to redeem the reward for the customer and returns
+ *   the freshly generated discount code:
+ *     { "success": true, "code": "XXXX-XXXX" }
+ *   The floating sidebar then auto-applies it to the cart via
+ *   /discount/<code>?redirect=/cart (Shopify's official method).
+ *   Because BON does not publish the mutation name publicly, the proxy
+ *   tries a short list of candidate mutations and reports per-candidate
+ *   results in "debug" — if ALL fail, open Apps Script > Executions
+ *   (or run testRedeemProbe) and send us the log so we can pin the
+ *   right mutation for your plan.
+ *
+ * v13 — POINT EXPIRY PASSTHROUGH (point_expired_at in the response).
+ *
+ * v20 — Shopify consent now via the dedicated GraphQL mutation
+ *   (customerEmailMarketingConsentUpdate) which touches ONLY consent data
+ *   — the REST customer PUT could invalidate the storefront session on
+ *   subscribe (logout on the next refresh). REST kept as fallback.
+ *
+ * v19 — Klaviyo 204: the bulk-delete (unsubscribe) job answers
+ *   204 No Content which is a SUCCESS — the toggle now stays on the
+ *   real state instead of reverting while Klaviyo applied the change.
+ *
+ * FEATURES
+ *   - doGet(e): per-customer data (points, history, earning rules,
+ *     redeem rules, rewards, tier) — used by the floating sidebar.
+ *   - v17 — MARKETING OPT-IN: action=mkt_state / mkt_set update the
+ *     customer's email marketing consent in Shopify (Admin API) and
+ *     Klaviyo (private key) — see the MARKETING OPT-IN section below.
+ *   - v21 — REGION/LANGUAGE PREFERENCE: action=pref_set updates the
+ *     customer's metafields.custom.language / .region in Shopify (Admin
+ *     API) whenever they change Region/Language in the storefront panel.
+ *   - v18 — DYNAMIC VIP TIERS: the root BON `tier` query returns the
+ *     tier program (tier_details: title, icon, required_value) and the
+ *     customer's tier position, so adding/editing tiers in the BON admin
+ *     updates the storefront automatically.
+ *   - doGet(e&action=redeem): redeem a reward, return the discount code.
+ *   - testScanAllPoints(): scans ALL customers (paginated, resumable).
+ *   - testResetScan(): clears the saved scan progress.
+ *   - testRedeemProbe(): discover which redeem mutation my BON plan supports.
+ *   - testDoGet(): local test with a fixed customer id.
+ *
+ * IMPORTANT: after ANY code change you must create a NEW deployment
+ * (Deploy > Manage deployments > pencil icon > Version: New version)
+ * so the SAME /exec URL keeps working.
+ * ============================================================ */
+
+var BON_ENDPOINT = 'https://graph.bonloyalty.com/graphql';
+
+var GROUPS = {
+
+  // G1 — Customer scalars (proven to work)
+  customer: 'query Customer($sid: String!){customer(shopify_id:$sid){' +
+    'id shopify_id shop_id email points points_earned first_name last_name full_name ' +
+    'created_at has_tier state birthday referral_code referral_link point_expired_at' +
+  '}}',
+
+  // G2 — Point history (only fields verified by the probe)
+  history: 'query Customer($sid: String!){customer(shopify_id:$sid){' +
+    'point_histories{id amount reason created_at updated_at}' +
+  '}}',
+
+  // G3 — Earning functions (all fields verified by the probe)
+  earning: 'query Customer($sid: String!){customer(shopify_id:$sid){' +
+    'earning_functions{id name type reward_type calculate_type reward_value unit_type ' +
+    'min_purchase money_value message is_active group_type}' +
+  '}}',
+
+  // G4 — Redeem functions (verified fields + redeem_type best-effort)
+  redeem: 'query Customer($sid: String!){customer(shopify_id:$sid){' +
+    'redeem_functions{id name reward_value min_purchase is_active redeem_type}' +
+  '}}',
+
+  // G4c — Redeem functions with calculate_type + money_value (v16):
+  //       every field needed to build a correct createDiscount input.
+  redeemCalc: 'query Customer($sid: String!){customer(shopify_id:$sid){' +
+    'redeem_functions{id name reward_value money_value calculate_type is_active}' +
+  '}}',
+
+  // G4b — Redeem functions: money_value only (best-effort enrichment.
+  //       Per the BON docs money_value is the discount amount of the rule
+  //       and reward_value is its point cost. If this group fails, the
+  //       base G4 data stays intact.)
+  redeemDetail: 'query Customer($sid: String!){customer(shopify_id:$sid){' +
+    'redeem_functions{id money_value}' +
+  '}}',
+
+  // G5 — Rewards (verified fields only: code, discount_amount, expired)
+  rewards: 'query Customer($sid: String!){customer(shopify_id:$sid){' +
+    'rewards{code discount_amount expired discount_code_id}' +
+  '}}',
+
+  // G5b — Rewards, code only (safest fallback)
+  rewardsCode: 'query Customer($sid: String!){customer(shopify_id:$sid){' +
+    'rewards{code}' +
+  '}}',
+
+  // G5c — Rewards: extra best-effort fields (is_used / reason, per the
+  //       BON docs CustomerReward example). Enriches G5 when available;
+  //       if it fails, the base rewards data stays intact.
+  rewardsDetail: 'query Customer($sid: String!){customer(shopify_id:$sid){' +
+    'rewards{code is_used reason}' +
+  '}}',
+
+  // G6 — Tier (v18): the shop's VIP TIER PROGRAM itself. Per the official
+  //       BON API docs the `tier` root query returns tier_settings +
+  //       tier_details (id, title, icon, required_value = the spend
+  //       threshold, is_default) and tier_customer_detail (the customer's
+  //       current/next tiers). This makes the floating sidebar fully
+  //       dynamic: edit/add tiers in the BON admin and the theme updates
+  //       automatically — no hardcoded tier names or amounts.
+  tiers: 'query Tier($sid: String!){tier{' +
+    'tier_settings{id status entry_method start_date milestone first_enable} ' +
+    'tier_details{id title icon file_id required_value is_default} ' +
+    'tier_customer_detail(shopify_id:$sid){current_tier next_tiers previous_tiers}' +
+  '}}'
+};
+
+function doGet(e) {
+
+  if (!e || !e.parameter) {
+    return json({
+      success: false,
+      error: 'Invalid request',
+      message: 'Call the deployed Web App URL with ?shopify_id=<customer-id>&email=<customer-email>. The floating sidebar does this automatically.'
+    });
+  }
+
+  var params = e.parameter || {};
+  var shopifyId = String(params.shopify_id || '').trim();
+  var email = String(params.email || '').trim().toLowerCase();
+  var action = String(params.action || '').trim().toLowerCase();
+
+  if (!shopifyId) {
+    return json({
+      success: false,
+      error: 'Missing shopify_id',
+      message: 'This is an API endpoint for the floating sidebar. Open it with ?shopify_id=<customer-id>&email=<customer-email>. Opening it without parameters is expected to show this message.'
+    });
+  }
+
+  /* ---------- Token (from Script Properties) ---------- */
+  var token = '';
+  try {
+    token = PropertiesService.getScriptProperties().getProperty('BON_API_TOKEN') || '';
+  } catch (err) {
+    return json({ success: false, error: 'Could not read Script Properties', detail: String(err) });
+  }
+  if (!token) {
+    return json({
+      success: false,
+      error: 'BON_API_TOKEN not configured',
+      message: 'Add BON_API_TOKEN in Apps Script -> Project Settings -> Script Properties.'
+    });
+  }
+
+  /* ---------- REDEEM branch (v14) ---------- */
+  if (action === 'redeem') {
+    return doRedeem(token, shopifyId, email, params.reward_id || params.redeem_id || '');
+  }
+
+  /* ---------- MARKETING OPT-IN branches (v17) ---------- */
+  if (action === 'mkt_state') return doMktState(shopifyId, email);
+  if (action === 'mkt_set')   return doMktSet(shopifyId, email, params.subscribe);
+
+  /* ---------- REGION / LANGUAGE PREFERENCE branch (v21) ---------- */
+  if (action === 'pref_set')  return doPrefSet(shopifyId, email, params.language, params.region);
+
+  /* ---------- Query each group ---------- */
+  var customer = null;
+  var history = [];
+  var earning = [];
+  var redeem = [];
+  var rewards = [];
+  var tier = null;
+  var debug = [];
+
+  function callGroup(label, query, onData) {
+    try {
+      var resp = UrlFetchApp.fetch(BON_ENDPOINT, {
+        method: 'post',
+        contentType: 'application/json',
+        headers: { 'Authorization': 'Bearer ' + token },
+        payload: JSON.stringify({ query: query, variables: { sid: shopifyId } }),
+        muteHttpExceptions: true
+      });
+      var body = JSON.parse(resp.getContentText());
+      if (body.errors && body.errors.length > 0) {
+        debug.push({ g: label, ok: false, msg: body.errors[0].message });
+        return;
+      }
+      if (!body.data || !body.data.customer) {
+        debug.push({ g: label, ok: false, msg: 'No customer record (null)' });
+        return;
+      }
+      onData(body.data.customer);
+      debug.push({ g: label, ok: true, msg: 'OK' });
+    } catch (err) {
+      debug.push({ g: label, ok: false, msg: String(err && err.message || err) });
+    }
+  }
+
+  callGroup('customer', GROUPS.customer, function(d) { customer = d; });
+  callGroup('history',  GROUPS.history,  function(d) { if (Array.isArray(d.point_histories)) history = d.point_histories; });
+  callGroup('earning',  GROUPS.earning,  function(d) { if (Array.isArray(d.earning_functions)) earning = d.earning_functions; });
+  callGroup('redeem',   GROUPS.redeem,   function(d) { if (Array.isArray(d.redeem_functions)) redeem = d.redeem_functions; });
+  callGroup('rewards',  GROUPS.rewards,  function(d) { if (Array.isArray(d.rewards)) rewards = d.rewards; });
+  if (rewards.length === 0) {
+    callGroup('rewardsCode', GROUPS.rewardsCode, function(d) { if (Array.isArray(d.rewards)) rewards = d.rewards; });
+  }
+  /* Best-effort enrichment — extra fields some BON shops expose. Each group
+     is independent: if it fails, the base data above is kept unchanged. */
+  callGroup('redeemDetail', GROUPS.redeemDetail, function(d) {
+    if (Array.isArray(d.redeem_functions)) {
+      var byId = {};
+      d.redeem_functions.forEach(function(r) { byId[String(r.id)] = r.money_value; });
+      redeem.forEach(function(r) {
+        if (byId[String(r.id)] !== undefined) r.money_value = byId[String(r.id)];
+      });
+    }
+  });
+  callGroup('rewardsDetail', GROUPS.rewardsDetail, function(d) {
+    if (Array.isArray(d.rewards)) {
+      var byCode = {};
+      d.rewards.forEach(function(r) { byCode[String(r.code)] = r; });
+      rewards.forEach(function(r) {
+        var extra = byCode[String(r.code)];
+        if (extra) {
+          if (extra.is_used !== undefined) r.is_used = extra.is_used;
+          if (extra.reason !== undefined) r.reason = extra.reason;
+        }
+      });
+    }
+  });
+  /* Tier program (v18) — root `tier` query (NOT the customer query), so a
+     dedicated fetch is used. Best-effort: if the plan/feature is missing,
+     tierData stays null and the theme falls back to its offline snapshot. */
+  var tierData = fetchTierProgram_(token, shopifyId, debug);
+
+  /* ---------- No BON record -> graceful zero ---------- */
+  if (!customer) {
+    return json({
+      success: true,
+      has_bon_account: false,
+      shopify_id: shopifyId,
+      points: 0,
+      points_earned: 0,
+      email: null,
+      first_name: null,
+      last_name: null,
+      full_name: null,
+      created_at: null,
+      point_expired_at: null,
+      has_tier: false,
+      tier: null,
+      customer_tier: null,
+      point_histories: [],
+      earning_functions: [],
+      redeem_functions: [],
+      rewards: [],
+      tier_settings: tierData && tierData.tier_settings ? tierData.tier_settings : null,
+      tier_details: tierData && Array.isArray(tierData.tier_details) ? tierData.tier_details : [],
+      tier_customer_detail: null,
+      debug: debug,
+      message: 'This customer has no loyalty record in BON — points 0.'
+    });
+  }
+
+  /* ---------- Optional email verification ---------- */
+  if (email) {
+    var bonEmail = String(customer.email || '').trim().toLowerCase();
+    if (bonEmail && bonEmail !== email) {
+      return json({ success: false, error: 'Email does not match' });
+    }
+  }
+
+  /* ---------- Clean response ---------- */
+  return json({
+    success: true,
+    has_bon_account: true,
+    shopify_id: customer.shopify_id || shopifyId,
+    points: customer.points != null ? customer.points : null,
+    points_earned: customer.points_earned != null ? customer.points_earned : null,
+    email: customer.email || null,
+    first_name: customer.first_name || null,
+    last_name: customer.last_name || null,
+    full_name: customer.full_name || null,
+    created_at: customer.created_at || null,
+    point_expired_at: customer.point_expired_at || null,
+    has_tier: !!customer.has_tier,
+    tier: null,
+    customer_tier: null,
+    point_histories: history,
+    earning_functions: earning,
+    redeem_functions: redeem,
+    rewards: rewards,
+    tier_settings: tierData && tierData.tier_settings ? tierData.tier_settings : null,
+    tier_details: tierData && Array.isArray(tierData.tier_details) ? tierData.tier_details : [],
+    tier_customer_detail: tierData && tierData.tier_customer_detail ? tierData.tier_customer_detail : null,
+    debug: debug
+  });
+
+}
+
+/* ---------- VIP TIER PROGRAM fetch (v18) ----------
+   Separate from callGroup because the `tier` root query returns
+   data.tier (not data.customer). Silent on failure. */
+function fetchTierProgram_(token, shopifyId, debug) {
+  try {
+    var resp = UrlFetchApp.fetch(BON_ENDPOINT, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'Authorization': 'Bearer ' + token },
+      payload: JSON.stringify({ query: GROUPS.tiers, variables: { sid: shopifyId } }),
+      muteHttpExceptions: true
+    });
+    var body = JSON.parse(resp.getContentText());
+    if (body.errors && body.errors.length > 0) {
+      debug.push({ g: 'tiers', ok: false, msg: body.errors[0].message });
+      return null;
+    }
+    if (!body.data || !body.data.tier) {
+      debug.push({ g: 'tiers', ok: false, msg: 'No tier program (null)' });
+      return null;
+    }
+    debug.push({ g: 'tiers', ok: true, msg: 'OK' });
+    return body.data.tier;
+  } catch (err) {
+    debug.push({ g: 'tiers', ok: false, msg: String(err && err.message || err) });
+    return null;
+  }
+}
+
+/**
+ * ============================================================
+ * REDEEM — ask BON to convert points into a discount code
+ * ============================================================
+ * BON's default flow (per BON support): customer redeems → BON makes
+ * Shopify generate the discount code → the code can then be applied.
+ * This endpoint performs that redeem call through the BON API and
+ * returns the code. Candidate mutations are tried in order; the first
+ * that returns data wins. Per-candidate errors are listed in "debug".
+ * ============================================================ */
+function doRedeem(token, shopifyId, email, rewardId) {
+  rewardId = String(rewardId || '').trim();
+  if (!rewardId) {
+    return json({ success: false, error: 'Missing reward_id', message: 'Call with ?action=redeem&shopify_id=..&reward_id=..' });
+  }
+
+  /* --- Verify the customer exists in BON (and the email matches) --- */
+  var cust = bonFetch(token, GROUPS.customer, { sid: shopifyId });
+  if (!cust || !cust.customer) {
+    return json({ success: false, error: 'Customer not found in BON', shopify_id: shopifyId });
+  }
+  if (email) {
+    var bonEmail = String(cust.customer.email || '').trim().toLowerCase();
+    if (bonEmail && bonEmail !== email) {
+      return json({ success: false, error: 'Email does not match' });
+    }
+  }
+
+  /* --- Find the redeem rule to learn its calculate_type & values --- */
+  var rule = null;
+  var rr = bonFetch(token, GROUPS.redeemCalc, { sid: shopifyId });
+  if (rr && rr.customer && Array.isArray(rr.customer.redeem_functions)) {
+    var list = rr.customer.redeem_functions;
+    for (var i = 0; i < list.length; i++) {
+      if (String(list[i].id) === rewardId) { rule = list[i]; break; }
+    }
+  }
+  if (rule && rule.is_active === 0) {
+    return json({ success: false, error: 'This redeem rule is not active' });
+  }
+
+  /* --- Build the DOCUMENTED createDiscount input ---
+     Fixed rules (calculate_type = 1): only redeem_id + shopify_id.
+     Increment rules (calculate_type = 2): reward_value + money_value too,
+     exactly as BON's docs require. */
+  var input = { redeem_id: parseInt(rewardId, 10) || rewardId, shopify_id: shopifyId };
+  if (rule && Number(rule.calculate_type) === 2) {
+    input.reward_value = Number(rule.reward_value) || 0;
+    input.money_value  = Number(rule.money_value)  || 0;
+  }
+
+  var MUT = 'mutation R($input: CreateDiscountInput!){createDiscount(input:$input){discount_code discount_value current_point ends_at reward_name}}';
+  var body;
+  try {
+    body = bonFetchBody(token, MUT, { input: input });
+  } catch (err) {
+    return json({ success: false, error: String(err && err.message || err) });
+  }
+  if (body.errors && body.errors.length > 0) {
+    return json({
+      success: false,
+      error: body.errors[0].message,
+      input_sent: input,
+      message: 'BON rejected the redemption (e.g. not enough points, inactive rule, or per-customer limit).'
+    });
+  }
+  var d = body.data && body.data.createDiscount;
+  if (d && d.discount_code) {
+    return json({
+      success: true,
+      code: String(d.discount_code),
+      discount_value: d.discount_value,
+      current_point: d.current_point,
+      ends_at: d.ends_at,
+      reward_name: d.reward_name,
+      reward_id: rewardId,
+      message: 'Redeemed via createDiscount — code generated by BON.'
+    });
+  }
+  return json({
+    success: false,
+    error: 'BON returned no discount code',
+    raw: JSON.stringify(body.data).slice(0, 500)
+  });
+}
+
+/* Deep-walks any response shape for a plausible discount code string. */
+function findCodeDeep(o, depth) {
+  if (depth > 5 || o == null || typeof o !== 'object') return '';
+  if (Array.isArray(o)) {
+    for (var i = 0; i < o.length; i++) { var r = findCodeDeep(o[i], depth + 1); if (r) return r; }
+    return '';
+  }
+  var keys = Object.keys(o);
+  for (var k = 0; k < keys.length; k++) {
+    if (/^(code|discount_code|coupon_code|voucher_code|reward_code)$/i.test(keys[k])) {
+      var v = String(o[keys[k]] || '').trim();
+      if (v.length >= 4 && v.indexOf('{') === -1) return v;
+    }
+  }
+  for (var j = 0; j < keys.length; j++) { var r2 = findCodeDeep(o[keys[j]], depth + 1); if (r2) return r2; }
+  return '';
+}
+
+function bonFetch(token, query, variables) {
+  var body = bonFetchBody(token, query, variables);
+  return body && body.data ? body.data : null;
+}
+
+function bonFetchBody(token, query, variables) {
+  var resp = UrlFetchApp.fetch(BON_ENDPOINT, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'Authorization': 'Bearer ' + token },
+    payload: JSON.stringify({ query: query, variables: variables }),
+    muteHttpExceptions: true
+  });
+  return JSON.parse(resp.getContentText());
+}
+
+function json(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * ============================================================
+ * REDEEM PROBE — finds which redeem mutation YOUR BON plan accepts
+ * ============================================================
+ * 1) In Shopify/BON admin, create a TEST customer with a few points,
+ *    note its shopify_id and one ACTIVE redeem_function id (open the
+ *    /exec URL with that shopify_id — redeem_functions[].id).
+ * 2) Put them below, run testRedeemProbe(), read the log, and send it
+ *    to the developer. It does NOT redeem — the last candidate asks
+ *    nothing; it just reports which mutation names BON accepted.
+ * ============================================================ */
+function testRedeemProbe() {
+  var props = PropertiesService.getScriptProperties();
+  var token = props.getProperty('BON_API_TOKEN') || '';
+
+  var TEST_SID = '10243237970013';  // <-- put the test customer's shopify_id
+  var TEST_RID = '0';               // <-- put an ACTIVE redeem_function id
+
+  var CANDIDATES = [
+    'redeemReward(shopify_id:$sid, redeem_function_id:$rid)',
+    'redeem_reward(shopify_id:$sid, redeem_function_id:$rid)',
+    'redeem(shopify_id:$sid, redeem_function_id:$rid)',
+    'redeemRewardPoint(shopify_id:$sid, redeem_function_id:$rid)'
+  ];
+  for (var i = 0; i < CANDIDATES.length; i++) {
+    var q = 'mutation R($sid: String!, $rid: String!){' + CANDIDATES[i] + '{code}}';
+    try {
+      var body = bonFetchBody(token, q, { sid: TEST_SID, rid: TEST_RID });
+      if (body.errors && body.errors.length > 0) {
+        Logger.log('[' + i + '] NOT ACCEPTED: ' + body.errors[0].message);
+      } else {
+        Logger.log('[' + i + '] ACCEPTED ✔  data=' + JSON.stringify(body.data));
+      }
+    } catch (err) {
+      Logger.log('[' + i + '] ERROR: ' + String(err && err.message || err));
+    }
+  }
+  Logger.log('=== probe done ===');
+}
+
+/**
+ * ============================================================
+ * MUTATION PROBE — every Mutation field YOUR BON plan exposes
+ * ============================================================
+ * GraphQL introspection — no guessing. Run testMutationProbe() in the
+ * editor (no new deployment needed — editor runs the saved code), copy
+ * the whole log and send it to the developer. The redeem block in
+ * doRedeem() will then be pinned to the exact mutation your plan uses.
+ * ============================================================ */
+function typeStr(t){
+  if (!t) return '?';
+  if (t.kind === 'NON_NULL') return typeStr(t.ofType) + '!';
+  if (t.kind === 'LIST')     return '[' + typeStr(t.ofType) + ']';
+  return t.name || typeStr(t.ofType);
+}
+
+function testMutationProbe() {
+  var token = PropertiesService.getScriptProperties().getProperty('BON_API_TOKEN') || '';
+
+  var q = 'query I{__schema{mutationType{fields{' +
+          'name args{name type{kind name ofType{kind name ofType{kind name ofType{kind name}}}}}' +
+          '}}}}';
+
+  var resp = UrlFetchApp.fetch(BON_ENDPOINT, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'Authorization': 'Bearer ' + token },
+    payload: JSON.stringify({ query: q }),
+    muteHttpExceptions: true
+  });
+  var body = JSON.parse(resp.getContentText());
+
+  if (body.errors && body.errors.length > 0) {
+    Logger.log('INTROSPECTION BLOCKED: ' + body.errors[0].message);
+    return;
+  }
+
+  var fields = body.data.__schema.mutationType.fields || [];
+  Logger.log('=== YOUR BON PLAN MUTATIONS (' + fields.length + ') ===');
+  for (var i = 0; i < fields.length; i++) {
+    var f = fields[i];
+    var args = (f.args || []).map(function(a){ return a.name + ':' + typeStr(a.type); }).join(', ');
+    Logger.log('MUTATION: ' + f.name + '(' + args + ')');
+  }
+  Logger.log('=== send this entire log to the developer ===');
+}
+
+/**
+ * ============================================================
+ * AUTO SCAN — ALL CUSTOMERS (RESUMABLE)
+ * ============================================================
+ * Apps Script editor -> function dropdown -> testScanAllPoints
+ * -> Run -> View > Logs
+ *
+ * - Tries perPage 500 first (fewer calls); falls back to 100.
+ * - Iterates every page until the list is empty / hasNextPage=false.
+ * - Logs only customers with points>0 or earned>0.
+ * - Saves progress every 10 pages in Script Properties:
+ *     BON_SCAN_PAGE  = next page to scan
+ *     BON_SCAN_FOUND = customers with points found so far (JSON)
+ * - If the 6-minute execution limit hits, just Run it again —
+ *   it resumes where it stopped. On completion the state resets.
+ * ============================================================ */
+function testScanAllPoints() {
+
+  var props = PropertiesService.getScriptProperties();
+  var token = props.getProperty('BON_API_TOKEN') || '';
+
+  /* List query — points + points_earned */
+  var query = 'query C($page:Int,$perPage:Int){customers(page:$page,perPage:$perPage){results{shopify_id email points points_earned first_name last_name} pageInfo{hasNextPage}}}';
+
+  /* perPage: try 500 first, fall back to 100 */
+  var perPage = 500;
+  try {
+    var testResp = UrlFetchApp.fetch(BON_ENDPOINT, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'Authorization': 'Bearer ' + token },
+      payload: JSON.stringify({ query: query, variables: { page: 1, perPage: 500 } }),
+      muteHttpExceptions: true
+    });
+    var testBody = JSON.parse(testResp.getContentText());
+    if (testBody.errors && testBody.errors.length > 0) {
+      perPage = 100;
+      Logger.log('perPage=500 failed -> using perPage=100');
+    } else {
+      Logger.log('perPage=500 OK');
+    }
+  } catch (err) {
+    perPage = 100;
+    Logger.log('perPage=500 error -> 100');
+  }
+
+  /* Resume state */
+  var startPage = Number(props.getProperty('BON_SCAN_PAGE') || '1');
+  var found = [];
+  try {
+    var saved = props.getProperty('BON_SCAN_FOUND');
+    if (saved) found = JSON.parse(saved);
+  } catch (e) { found = []; }
+
+  Logger.log('SCAN START: page=' + startPage + ' perPage=' + perPage +
+             ' | customers with points already found=' + found.length);
+
+  var total = startPage > 1 ? (startPage - 1) * perPage : 0;
+  var finished = false;
+
+  for (var page = startPage; page <= 2000; page++) {
+    try {
+      var resp = UrlFetchApp.fetch(BON_ENDPOINT, {
+        method: 'post',
+        contentType: 'application/json',
+        headers: { 'Authorization': 'Bearer ' + token },
+        payload: JSON.stringify({ query: query, variables: { page: page, perPage: perPage } }),
+        muteHttpExceptions: true
+      });
+      var body = JSON.parse(resp.getContentText());
+      if (body.errors && body.errors.length > 0) {
+        Logger.log('Page ' + page + ' ERROR: ' + body.errors[0].message);
+        break;
+      }
+      var results = body.data && body.data.customers && body.data.customers.results;
+      if (!results || results.length === 0) {
+        Logger.log('Page ' + page + ': empty — LIST COMPLETE.');
+        finished = true;
+        break;
+      }
+
+      for (var r = 0; r < results.length; r++) {
+        var c = results[r];
+        total++;
+        var pts = c.points != null ? Number(c.points) : 0;
+        var earned = c.points_earned != null ? Number(c.points_earned) : 0;
+        if (pts > 0 || earned > 0) {
+          found.push({
+            page: page,
+            points: c.points,
+            earned: c.points_earned,
+            shopify_id: c.shopify_id || '',
+            email: c.email || '',
+            name: ((c.first_name || '') + ' ' + (c.last_name || '')).trim()
+          });
+          Logger.log('POINTS! page=' + page +
+                     ' | points=' + c.points + ' | earned=' + c.points_earned +
+                     ' | shopify_id=' + (c.shopify_id || '?') +
+                     ' | email=' + (c.email || '?') +
+                     ' | name=' + ((c.first_name || '') + ' ' + (c.last_name || '')).trim());
+        }
+      }
+
+      /* Save progress every 10 pages (for resume) */
+      if (page % 10 === 0) {
+        props.setProperty('BON_SCAN_PAGE', String(page + 1));
+        props.setProperty('BON_SCAN_FOUND', JSON.stringify(found));
+        Logger.log('SAVED progress: page ' + page + ' / total ' + total +
+                   ' | customers with points so far=' + found.length);
+      }
+      if (page % 50 === 0) {
+        Logger.log('Progress: page ' + page + ' / total ' + total);
+      }
+
+      var hasNext = body.data.customers.pageInfo && body.data.customers.pageInfo.hasNextPage;
+      if (hasNext === false) {
+        Logger.log('hasNextPage=false — LIST COMPLETE at page ' + page);
+        finished = true;
+        break;
+      }
+    } catch (err) {
+      Logger.log('Page ' + page + ' ERROR: ' + String(err && err.message || err));
+      break;
+    }
+  }
+
+  if (finished) {
+    /* Complete — reset state */
+    props.deleteProperty('BON_SCAN_PAGE');
+    props.deleteProperty('BON_SCAN_FOUND');
+    Logger.log('=== SCAN COMPLETE ===');
+  } else {
+    props.setProperty('BON_SCAN_PAGE', String(startPage));
+    props.setProperty('BON_SCAN_FOUND', JSON.stringify(found));
+    Logger.log('=== TIME LIMIT LIKELY — RUN AGAIN, it will resume (page ' + startPage + ') ===');
+  }
+
+  Logger.log('=== TOTAL scanned (this run): ' + total + ' ===');
+
+  if (found.length === 0) {
+    Logger.log('No customer with points>0 / earned>0 found.');
+  } else {
+    Logger.log('=== ALL CUSTOMERS WITH POINTS (' + found.length + ') ===');
+    for (var w = 0; w < found.length; w++) {
+      var cc = found[w];
+      Logger.log('POINTS=' + cc.points + ' | earned=' + cc.earned +
+                 ' | shopify_id=' + (cc.shopify_id || '?') +
+                 ' | email=' + (cc.email || '?') +
+                 ' | name=' + (cc.name || '?'));
+    }
+    Logger.log('=== DONE ===');
+  }
+}
+
+/**
+ * ============================================================
+ * RESET SCAN (start over from page 1)
+ * ============================================================ */
+function testResetScan() {
+  PropertiesService.getScriptProperties().deleteProperty('BON_SCAN_PAGE');
+  PropertiesService.getScriptProperties().deleteProperty('BON_SCAN_FOUND');
+  Logger.log('Scan state reset — the next run will start from page 1.');
+}
+
+/**
+ * ============================================================
+ * OPTIONAL LOCAL TEST (do not run doGet directly)
+ * ============================================================ */
+function testDoGet() {
+  var fakeEvent = { parameter: { shopify_id: '10243237970013' } };
+  var result = doGet(fakeEvent);
+  Logger.log(result.getContent());
+}
+
+/**
+ * ============================================================
+ * MARKETING OPT-IN (Shopify + Klaviyo) — v17
+ * ============================================================
+ * The floating-sidebar membership toggle calls:
+ *   ?action=mkt_state&shopify_id=..&email=..
+ *     -> { success:true, subscribed:true|false, ... }   (current state)
+ *   ?action=mkt_set&shopify_id=..&email=..&subscribe=1 (or 0)
+ *     -> subscribes / unsubscribes the customer from marketing
+ *        emails in BOTH Shopify and Klaviyo and reports the
+ *        per-system result.
+ *
+ * Script Properties needed (Apps Script -> Project Settings
+ * -> Script Properties):
+ *   SHOPIFY_SHOP        -> your-store.myshopify.com
+ *   SHOPIFY_ADMIN_TOKEN -> Admin API access token with the
+ *                          read_customers + write_customers scopes
+ *                          (create a custom app in Shopify Admin >
+ *                          Apps > Develop apps).
+ *   KLAVIYO_PRIVATE_KEY -> Klaviyo private API key (pk_...)
+ *                          (Klaviyo > Settings > API keys).
+ *                          Optional: Klaviyo is skipped if empty.
+ *
+ * IMPORTANT: after ANY code change create a NEW deployment
+ * (Deploy > Manage deployments > pencil > Version: New version)
+ * so the SAME /exec URL keeps working.
+ * ============================================================ */
+
+var SHOPIFY_API_VERSION = '2025-10'; // any currently-supported Admin API version works
+var KLAVIYO_REVISION    = '2024-10-15';
+
+function mktProp_(name) {
+  try { return PropertiesService.getScriptProperties().getProperty(name) || ''; }
+  catch (err) { return ''; }
+}
+
+/* ---------- Shopify helpers ---------- */
+
+function shopifyFindCustomer_(email, debug) {
+  var shop = mktProp_('SHOPIFY_SHOP');
+  var tok  = mktProp_('SHOPIFY_ADMIN_TOKEN');
+  if (!shop || !tok) { if (debug) debug.push({ shopify: 'SHOPIFY_SHOP / SHOPIFY_ADMIN_TOKEN not configured' }); return null; }
+  try {
+    var resp = UrlFetchApp.fetch(
+      'https://' + shop + '/admin/api/' + SHOPIFY_API_VERSION
+        + '/customers/search.json?query=' + encodeURIComponent('email:' + email),
+      { method: 'get', headers: { 'X-Shopify-Access-Token': tok }, muteHttpExceptions: true });
+    var body = JSON.parse(resp.getContentText());
+    if (resp.getResponseCode() !== 200) { if (debug) debug.push({ shopify_search: resp.getResponseCode(), detail: body }); return null; }
+    return (body.customers && body.customers.length) ? body.customers[0] : null;
+  } catch (err) {
+    if (debug) debug.push({ shopify_search: String(err) });
+    return null;
+  }
+}
+
+function shopifySetMarketing_(email, subscribe, debug) {
+  var shop = mktProp_('SHOPIFY_SHOP');
+  var tok  = mktProp_('SHOPIFY_ADMIN_TOKEN');
+  if (!shop || !tok) return { ok: 'skipped', reason: 'SHOPIFY_SHOP / SHOPIFY_ADMIN_TOKEN not configured' };
+  var cust = shopifyFindCustomer_(email, debug);
+  if (!cust) return { ok: false, reason: 'Customer not found in Shopify for ' + email };
+  var wantState = subscribe ? 'SUBSCRIBED' : 'UNSUBSCRIBED';
+  /* ---- Preferred: dedicated consent mutation (GraphQL). It touches ONLY
+     the marketing consent — unlike the REST customer PUT, which updates the
+     customer record itself and (in the subscribe direction) was kicking the
+     customer session out of the storefront on the next refresh. ---- */
+  try {
+    var MUT = 'mutation M($input: CustomerEmailMarketingConsentUpdateInput!)'
+      + '{customerEmailMarketingConsentUpdate(input:$input){'
+      + 'customer{ id emailMarketingConsent{ marketingState marketingOptInLevel consentUpdatedAt } }'
+      + 'userErrors{ field message } }}';
+    var resp = UrlFetchApp.fetch(
+      'https://' + shop + '/admin/api/' + SHOPIFY_API_VERSION + '/graphql.json',
+      {
+        method: 'post',
+        contentType: 'application/json',
+        headers: { 'X-Shopify-Access-Token': tok },
+        payload: JSON.stringify({ query: MUT, variables: { input: {
+          customerId: 'gid://shopify/Customer/' + cust.id,
+          emailMarketingConsent: {
+            marketingState:      wantState,
+            marketingOptInLevel: 'SINGLE_OPT_IN',
+            consentUpdatedAt:    new Date().toISOString()
+          }
+        } } }),
+        muteHttpExceptions: true
+      });
+    var body = JSON.parse(resp.getContentText());
+    var mmc = body && body.data && body.data.customerEmailMarketingConsentUpdate;
+    if (mmc && (!mmc.userErrors || !mmc.userErrors.length) && mmc.customer
+        && mmc.customer.emailMarketingConsent && mmc.customer.emailMarketingConsent.marketingState === wantState) {
+      return { ok: true, state: String(mmc.customer.emailMarketingConsent.marketingState).toLowerCase(), via: 'graphql' };
+    }
+    if (debug) debug.push({ shopify_graphql: mmc && mmc.userErrors && mmc.userErrors.length ? mmc.userErrors[0].message : (body && body.errors && body.errors.length ? body.errors[0].message : 'no data') });
+  } catch (err) {
+    if (debug) debug.push({ shopify_graphql: String(err) });
+  }
+  /* ---- Fallback: REST customer PUT (older tokens/scopes) ---- */
+  try {
+    var state = subscribe ? 'subscribed' : 'unsubscribed';
+    var resp2 = UrlFetchApp.fetch(
+      'https://' + shop + '/admin/api/' + SHOPIFY_API_VERSION + '/customers/' + cust.id + '.json',
+      {
+        method: 'put',
+        contentType: 'application/json',
+        headers: { 'X-Shopify-Access-Token': tok },
+        payload: JSON.stringify({ customer: {
+          id: cust.id,
+          email_marketing_consent: {
+            state: state,
+            opt_in_level: 'single_opt_in',
+            consent_updated_at: new Date().toISOString()
+          }
+        } }),
+        muteHttpExceptions: true
+      });
+    var body2 = JSON.parse(resp2.getContentText());
+    var ok2 = resp2.getResponseCode() === 200 && body2.customer
+      && body2.customer.email_marketing_consent
+      && body2.customer.email_marketing_consent.state === state;
+    return { ok: ok2, state: (body2.customer && body2.customer.email_marketing_consent) ? body2.customer.email_marketing_consent.state : null, http: resp2.getResponseCode(), via: 'rest' };
+  } catch (err2) {
+    return { ok: false, reason: String(err2) };
+  }
+}
+
+/* ---------- Klaviyo helpers ---------- */
+
+function klaviyoSetMarketing_(email, subscribe) {
+  var key = mktProp_('KLAVIYO_PRIVATE_KEY');
+  if (!key) return { ok: 'skipped', reason: 'KLAVIYO_PRIVATE_KEY not configured' };
+  var type = subscribe ? 'profile-subscription-bulk-create-job' : 'profile-subscription-bulk-delete-job';
+  var url  = subscribe
+    ? 'https://a.klaviyo.com/api/profile-subscription-bulk-create-jobs/'
+    : 'https://a.klaviyo.com/api/profile-subscription-bulk-delete-jobs/';
+  try {
+    var resp = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'Authorization': 'Klaviyo-API-Key ' + key, 'revision': KLAVIYO_REVISION },
+      payload: JSON.stringify({ data: {
+        type: type,
+        attributes: { profiles: { data: [ {
+          type: 'profile',
+          attributes: {
+            email: email,
+            subscriptions: { email: { marketing: { consent: subscribe ? 'SUBSCRIBED' : 'UNSUBSCRIBED' } } }
+          }
+        } ] } }
+      } }),
+      muteHttpExceptions: true
+    });
+    var code = resp.getResponseCode();
+    // Klaviyo job responses: create = 202/201/200 accepted; the bulk-DELETE
+    // job answers 204 No Content — that is ALSO a success (without this the
+    // unsubscribe applied silently while the UI thought it failed).
+    return { ok: code === 200 || code === 201 || code === 202 || code === 204, http: code };
+  } catch (err) {
+    return { ok: false, reason: String(err) };
+  }
+}
+
+function klaviyoGetConsent_(email, debug) {
+  var key = mktProp_('KLAVIYO_PRIVATE_KEY');
+  if (!key) return null;
+  try {
+    var find = UrlFetchApp.fetch(
+      'https://a.klaviyo.com/api/profiles/?filter=' + encodeURIComponent('equals(email,"' + email + '")'),
+      { method: 'get', headers: { 'Authorization': 'Klaviyo-API-Key ' + key, 'revision': KLAVIYO_REVISION }, muteHttpExceptions: true });
+    var fb = JSON.parse(find.getContentText());
+    if (!fb.data || !fb.data.length) return null;
+    var id = fb.data[0].id;
+    var det = UrlFetchApp.fetch(
+      'https://a.klaviyo.com/api/profiles/' + id + '/?additional-fields[profile]=subscriptions',
+      { method: 'get', headers: { 'Authorization': 'Klaviyo-API-Key ' + key, 'revision': KLAVIYO_REVISION }, muteHttpExceptions: true });
+    var db = JSON.parse(det.getContentText());
+    var c = db && db.data && db.data.attributes && db.data.attributes.subscriptions
+      && db.data.attributes.subscriptions.email && db.data.attributes.subscriptions.email.marketing
+      ? db.data.attributes.subscriptions.email.marketing.consent : null;
+    return c ? String(c) : null;
+  } catch (err) {
+    if (debug) debug.push({ klaviyo: String(err) });
+    return null;
+  }
+}
+
+/* ---------- actions ---------- */
+
+function doMktState(shopifyId, email) {
+  if (!email) return json({ success: false, error: 'Missing email' });
+  var debug = [];
+  var out = { success: true, email: email, subscribed: false, shopify_state: null, klaviyo_state: null };
+  var cust = shopifyFindCustomer_(email, debug);
+  if (cust && cust.email_marketing_consent && cust.email_marketing_consent.state) {
+    out.shopify_state = String(cust.email_marketing_consent.state);
+    out.subscribed = (out.shopify_state === 'subscribed');
+  } else {
+    var ks = klaviyoGetConsent_(email, debug);
+    if (ks) { out.klaviyo_state = ks; out.subscribed = (ks === 'SUBSCRIBED'); }
+  }
+  if (debug.length) out.debug = debug;
+  return json(out);
+}
+
+function doMktSet(shopifyId, email, subscribeRaw) {
+  if (!email) return json({ success: false, error: 'Missing email' });
+  var s = String(subscribeRaw || '').trim().toLowerCase();
+  var subscribe = (s === '1' || s === 'true' || s === 'yes' || s === 'on');
+  var debug = [];
+  var results = {
+    shopify: shopifySetMarketing_(email, subscribe, debug),
+    klaviyo: klaviyoSetMarketing_(email, subscribe)
+  };
+  var configured = results.shopify.ok !== 'skipped' || results.klaviyo.ok !== 'skipped';
+  if (!configured) {
+    return json({ success: false, error: 'Marketing endpoints not configured',
+      message: 'Add SHOPIFY_SHOP + SHOPIFY_ADMIN_TOKEN (and optionally KLAVIYO_PRIVATE_KEY) in Apps Script > Project Settings > Script Properties, then publish a new deployment version.' });
+  }
+  var anyOk = results.shopify.ok === true || results.klaviyo.ok === true;
+  var out = { success: anyOk, subscribed: subscribe, results: results };
+  if (debug.length) out.debug = debug;
+  return json(out);
+}
+
+/** Quick local test: put a customer email below and run testMktState(). */
+function testMktState() {
+  var r = doMktState('', 'customer-email@example.com');
+  Logger.log(r.getContent());
+}
+
+/* ============================================================
+ * v21 — REGION / LANGUAGE PREFERENCE (customer metafields)
+ * The membership drawer's Region & Language panel calls
+ * ?action=pref_set&language=<iso>&region=<iso> whenever the customer
+ * applies a change, so the metafields.custom.language / .region shown
+ * in Shopify Admin (Customer > Metafields) always mirror what the
+ * customer picked on the storefront — same pattern as the marketing
+ * opt-in toggle above.
+ * ============================================================ */
+
+function doPrefSet(shopifyId, email, language, region) {
+  if (!email) return json({ success: false, error: 'Missing email' });
+  language = String(language || '').trim();
+  region   = String(region || '').trim();
+  if (!language && !region) {
+    return json({ success: false, error: 'Nothing to update', message: 'Pass language and/or region.' });
+  }
+  var debug = [];
+  var result = shopifySetCustomerPrefs_(email, language, region, debug);
+  var out = { success: !!result.ok, language: language || null, region: region || null, result: result };
+  if (debug.length) out.debug = debug;
+  return json(out);
+}
+
+function shopifySetCustomerPrefs_(email, language, region, debug) {
+  var shop = mktProp_('SHOPIFY_SHOP');
+  var tok  = mktProp_('SHOPIFY_ADMIN_TOKEN');
+  if (!shop || !tok) return { ok: 'skipped', reason: 'SHOPIFY_SHOP / SHOPIFY_ADMIN_TOKEN not configured' };
+  var cust = shopifyFindCustomer_(email, debug);
+  if (!cust) return { ok: false, reason: 'Customer not found in Shopify for ' + email };
+
+  var metafields = [];
+  if (language) {
+    metafields.push({
+      ownerId: 'gid://shopify/Customer/' + cust.id,
+      namespace: 'custom',
+      key: 'language',
+      type: 'single_line_text_field',
+      value: language
+    });
+  }
+  if (region) {
+    metafields.push({
+      ownerId: 'gid://shopify/Customer/' + cust.id,
+      namespace: 'custom',
+      key: 'region',
+      type: 'single_line_text_field',
+      value: region
+    });
+  }
+  if (!metafields.length) return { ok: false, reason: 'Nothing to update' };
+
+  /* ---- Preferred: metafieldsSet (GraphQL, touches ONLY the metafields
+     listed, same principle as the dedicated marketing-consent mutation). */
+  try {
+    var MUT = 'mutation M($metafields: [MetafieldsSetInput!]!)'
+      + '{metafieldsSet(metafields:$metafields){'
+      + 'metafields{ key value } userErrors{ field message } }}';
+    var resp = UrlFetchApp.fetch(
+      'https://' + shop + '/admin/api/' + SHOPIFY_API_VERSION + '/graphql.json',
+      {
+        method: 'post',
+        contentType: 'application/json',
+        headers: { 'X-Shopify-Access-Token': tok },
+        payload: JSON.stringify({ query: MUT, variables: { metafields: metafields } }),
+        muteHttpExceptions: true
+      });
+    var body = JSON.parse(resp.getContentText());
+    var ms = body && body.data && body.data.metafieldsSet;
+    if (ms && (!ms.userErrors || !ms.userErrors.length) && ms.metafields && ms.metafields.length) {
+      return { ok: true, metafields: ms.metafields, via: 'graphql' };
+    }
+    if (debug) debug.push({ shopify_graphql: ms && ms.userErrors && ms.userErrors.length ? ms.userErrors[0].message : (body && body.errors && body.errors.length ? body.errors[0].message : 'no data') });
+  } catch (err) {
+    if (debug) debug.push({ shopify_graphql: String(err) });
+  }
+
+  /* ---- Fallback: REST metafields endpoint, one call per field. ---- */
+  try {
+    var allOk = true;
+    var restResults = [];
+    [{ key: 'language', value: language }, { key: 'region', value: region }].forEach(function(f) {
+      if (!f.value) return;
+      var resp2 = UrlFetchApp.fetch(
+        'https://' + shop + '/admin/api/' + SHOPIFY_API_VERSION + '/customers/' + cust.id + '/metafields.json',
+        {
+          method: 'post',
+          contentType: 'application/json',
+          headers: { 'X-Shopify-Access-Token': tok },
+          payload: JSON.stringify({ metafield: {
+            namespace: 'custom',
+            key: f.key,
+            type: 'single_line_text_field',
+            value: f.value
+          } }),
+          muteHttpExceptions: true
+        });
+      var code2 = resp2.getResponseCode();
+      var ok2 = code2 === 200 || code2 === 201;
+      if (!ok2) allOk = false;
+      restResults.push({ key: f.key, http: code2 });
+    });
+    return { ok: allOk, results: restResults, via: 'rest' };
+  } catch (err2) {
+    return { ok: false, reason: String(err2) };
+  }
+}

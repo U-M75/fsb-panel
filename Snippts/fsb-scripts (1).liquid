@@ -1,0 +1,2580 @@
+<!-- Snippet: fsb-scripts (sidebar + BON Loyalty logic) — rendered by sections/floating-sidebar.liquid -->
+<script>
+(function(){
+  var sid = '{{ section.id }}';
+  var sectionRoot = document.getElementById('sid-' + sid);
+  var overlay = document.getElementById('fsb-panel-overlay-' + sid);
+  if (!sectionRoot || !overlay) return;
+  function rememberMobileSidebarPadding(){
+    if (!window.matchMedia || !window.matchMedia('(max-width: 767px)').matches) return;
+    var sidebarContainer = sectionRoot.querySelector('.fsb-container');
+    if (!sidebarContainer) return;
+    var computed = window.getComputedStyle(sidebarContainer);
+    sidebarContainer.style.setProperty('--fsb-mobile-pad-top', computed.paddingTop);
+    sidebarContainer.style.setProperty('--fsb-mobile-pad-right', computed.paddingRight);
+    sidebarContainer.style.setProperty('--fsb-mobile-pad-bottom', computed.paddingBottom);
+    sidebarContainer.style.setProperty('--fsb-mobile-pad-left', computed.paddingLeft);
+  }
+  function rememberSidebarGeometry(){
+    if (sectionRoot.classList.contains('fsb-region-panel-open')) return;
+    var sidebarContainer = sectionRoot.querySelector('.fsb-container');
+    if (!sidebarContainer) return;
+    var computed = window.getComputedStyle(sidebarContainer);
+    var width = sidebarContainer.getBoundingClientRect().width;
+    if (!width) return;
+    sidebarContainer.style.setProperty('--fsb-stable-sidebar-width', width + 'px');
+    sidebarContainer.style.setProperty('--fsb-stable-sidebar-pad-top', computed.paddingTop);
+    sidebarContainer.style.setProperty('--fsb-stable-sidebar-pad-right', computed.paddingRight);
+    sidebarContainer.style.setProperty('--fsb-stable-sidebar-pad-bottom', computed.paddingBottom);
+    sidebarContainer.style.setProperty('--fsb-stable-sidebar-pad-left', computed.paddingLeft);
+  }
+  function syncMobileOrderVisibility(){
+    var isMobile = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+    sectionRoot.querySelectorAll('.mobile-order-item').forEach(function(item){
+      var inlineOrder = item.style.getPropertyValue('--mobile-order').trim();
+      var mobileOrder = parseFloat(inlineOrder);
+      var shouldHide = isMobile && !isNaN(mobileOrder) && mobileOrder === 0;
+      item.classList.toggle('fsb-mobile-order-hidden', shouldHide);
+    });
+  }
+  function allPanels(){ return overlay.querySelectorAll('.fsb-side-panel'); }
+  function getCartDrawer(){ return document.querySelector('.cart-drawer'); }
+  function clearActiveIcons(){
+    sectionRoot.querySelectorAll('[data-fsb-icon]').forEach(function(el){
+      el.classList.remove('fsb-active');
+    });
+  }
+  function setActiveIcon(name){
+    clearActiveIcons();
+    if (!name) return;
+    var el = sectionRoot.querySelector('[data-fsb-icon="' + name + '"]');
+    if (el) el.classList.add('fsb-active');
+  }
+  (function forceCartClosed(){
+    var cd = getCartDrawer();
+    if (cd) {
+      cd.classList.remove('active');
+      cd.style.removeProperty('transform');
+    }
+    document.body.classList.remove('fsb-panel-open');
+    overlay.classList.remove('active');
+    clearActiveIcons();
+  })();
+  window.requestAnimationFrame(function(){
+    syncMobileOrderVisibility();
+    rememberMobileSidebarPadding();
+    rememberSidebarGeometry();
+  });
+  function isAnythingOpen(){
+    var cartDrawer = getCartDrawer();
+    if (cartDrawer && cartDrawer.classList.contains('active')) return true;
+    var openPanelEl = overlay.querySelector('.fsb-side-panel.active');
+    return !!openPanelEl;
+  }
+  function syncBodyState(){
+    var cartDrawer = getCartDrawer();
+    var cartOpen = cartDrawer && cartDrawer.classList.contains('active');
+    var openPanelEl = overlay.querySelector('.fsb-side-panel.active');
+    if (isAnythingOpen()) {
+      document.body.classList.add('fsb-panel-open');
+      overlay.classList.add('active');
+    } else {
+      document.body.classList.remove('fsb-panel-open');
+      overlay.classList.remove('active');
+    }
+    if (cartOpen) {
+      setActiveIcon('cart');
+    } else if (openPanelEl) {
+      setActiveIcon(openPanelEl.getAttribute('data-fsb-panel'));
+    } else {
+      clearActiveIcons();
+    }
+  }
+  function closeCart(){
+    var cartDrawer = getCartDrawer();
+    if (cartDrawer) {
+      cartDrawer.classList.remove('active');
+      cartDrawer.style.removeProperty('transform');
+    }
+  }
+  function openCart(){
+    var cartDrawer = getCartDrawer();
+    if (cartDrawer) {
+      cartDrawer.style.removeProperty('transform');
+      cartDrawer.classList.add('active');
+    }
+  }
+  function closeAllPanels(){
+    sectionRoot.classList.remove('fsb-region-panel-open');
+    overlay.classList.remove('fsb-address-pair-open');
+    overlay.classList.remove('fsb-address-edit-pair-open');
+    overlay.classList.remove('fsb-od-pair-open');
+    allPanels().forEach(function(p){ p.classList.remove('active'); });
+    closeCart();
+    resetThemeMenu();
+    syncBodyState();
+  }
+  function openPanel(name){
+    if (name === 'menu') ensureThemeMenu();
+    if (name === 'region') {
+      rememberSidebarGeometry();
+      sectionRoot.classList.add('fsb-region-panel-open');
+    } else {
+      sectionRoot.classList.remove('fsb-region-panel-open');
+    }
+    overlay.classList.remove('fsb-address-pair-open');
+    overlay.classList.remove('fsb-address-edit-pair-open');
+    overlay.classList.remove('fsb-od-pair-open');
+    closeCart();
+    allPanels().forEach(function(p){ p.classList.remove('active'); });
+    var target = overlay.querySelector('.fsb-side-panel[data-fsb-panel="' + name + '"]');
+    if (target) {
+      target.classList.add('active');
+      syncBodyState();
+      if (name === 'region') initRegionPanel();
+      if (name === 'notifications') initNotificationsPanel();
+      if (name === 'points' || name === 'rewards') initLoyaltyPanel(name);
+    }
+  }
+  /* ============================================================
+     THEME MOBILE MENU (same as the header hamburger menu)
+     ============================================================ */
+  var useThemeMenu = ({{ section.settings.use_theme_mobile_menu | default: true | json }}) !== false;
+  var themeMenuInstalled = false;
+
+  /* Theme menu shows ONLY on mobile; desktop keeps the old fallback menu. */
+  function isMobileViewport(){
+    return window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+  }
+
+  function syncThemeMenuForViewport(){
+    if (!useThemeMenu) return;
+    var menuPanel = document.getElementById('fsb-panel-menu-' + sid);
+    if (!menuPanel) return;
+    if (isMobileViewport()) {
+      if (!themeMenuInstalled) installThemeMenu();
+      if (themeMenuInstalled) menuPanel.classList.add('fsb-theme-menu-active');
+    } else {
+      menuPanel.classList.remove('fsb-theme-menu-active');
+      resetThemeMenu();
+    }
+  }
+
+  function resetThemeMenu(){
+    if (!themeMenuInstalled) return;
+    var clone = document.getElementById('fsb-mobile-menu-' + sid);
+    if (!clone) return;
+    /* same as the header drawer close: collapse top-level sub-menus */
+    clone.querySelectorAll('.mobile-menu > li > .link-container[open]').forEach(function(d){
+      d.classList.remove('menu-opening', 'submenu-open');
+      d.removeAttribute('open');
+    });
+  }
+
+  function installThemeMenu(){
+    if (themeMenuInstalled) return true;
+    /* Do not install on desktop — the fallback menu is used there */
+    if (!isMobileViewport()) return false;
+    var sourceNav = document.getElementById('mobile-menu');
+    var slot = document.getElementById('fsb-theme-menu-slot-' + sid);
+    var menuPanel = document.getElementById('fsb-panel-menu-' + sid);
+    if (!sourceNav || !slot || !menuPanel) {
+      if (!sourceNav) console.warn('[FSB] Header #mobile-menu not found — fallback menu is active.');
+      return false;
+    }
+
+    var clone = sourceNav.cloneNode(true);
+    clone.id = 'fsb-mobile-menu-' + sid;
+    clone.classList.add('fsb-mobile-menu-clone');
+
+    /* start collapsed, exactly like the header drawer when closed */
+    clone.querySelectorAll('.mobile-menu > li > .link-container[open]').forEach(function(d){
+      d.classList.remove('menu-opening', 'submenu-open');
+      d.removeAttribute('open');
+    });
+
+    slot.appendChild(clone);
+    menuPanel.classList.add('fsb-theme-menu-active');
+    themeMenuInstalled = true;
+    console.log('[FSB] Theme mobile menu installed:', clone.querySelectorAll('.mobile-menu > li').length, 'top-level items.');
+
+    /* mega-menu promo images use the theme lazy-load classes; make them
+       load eagerly inside the panel (lazySizes never sees the clone) */
+    function fsbAbsUrl(u){
+      if (!u) return u;
+      if (u.indexOf('//') === 0) return 'https:' + u;
+      return u;
+    }
+    clone.querySelectorAll('img.lazyload').forEach(function(img){
+      var src = img.getAttribute('data-src');
+      var srcset = img.getAttribute('data-srcset');
+      if (src) img.setAttribute('src', fsbAbsUrl(src));
+      if (srcset) {
+        img.setAttribute('srcset', srcset.split(',').map(function(p){
+          return fsbAbsUrl(p.trim());
+        }).join(', '));
+      }
+      img.removeAttribute('data-src');
+      img.removeAttribute('data-srcset');
+      img.classList.remove('lazyload');
+      img.classList.add('lazyloaded');
+    });
+    /* ensure images load even when the header is hidden (lazy loading off) */
+    clone.querySelectorAll('img').forEach(function(img){
+      img.setAttribute('loading', 'eager');
+    });
+
+    /* summary behaviour mirrors theme header.js: slide sub-menu in */
+    clone.querySelectorAll('summary').forEach(function(summary){
+      summary.addEventListener('click', function(){
+        var detailsElement = summary.parentNode;
+        var parentMenuElement = detailsElement.closest('.link-container');
+        var bodyEl = clone.closest('.fsb-panel-body');
+        if (bodyEl) bodyEl.scrollTop = 0;
+        setTimeout(function(){
+          detailsElement.classList.add('menu-opening');
+          if (parentMenuElement) parentMenuElement.classList.add('submenu-open');
+        }, 100);
+      });
+    });
+
+    /* back button closes the sub-menu (mirrors header.js closeAnimation) */
+    clone.querySelectorAll('.parent-link-back--button').forEach(function(button){
+      button.addEventListener('click', function(e){
+        e.preventDefault();
+        var detailsElement = button.closest('details');
+        if (!detailsElement) return;
+        detailsElement.classList.remove('menu-opening');
+        setTimeout(function(){ detailsElement.removeAttribute('open'); }, 400);
+      });
+    });
+
+    /* clicking a real link closes the panel, then navigates */
+    clone.addEventListener('click', function(e){
+      var a = e.target.closest('a[href]');
+      if (!a || !clone.contains(a)) return;
+      var href = a.getAttribute('href') || '';
+      if (href === '#' || href.indexOf('javascript:') === 0) {
+        e.preventDefault();
+        return;
+      }
+      e.preventDefault();
+      closeAllPanels();
+      window.location.href = href;
+    });
+
+    return true;
+  }
+
+  function ensureThemeMenu(){
+    if (!useThemeMenu || themeMenuInstalled) return;
+    installThemeMenu();
+  }
+
+  if (useThemeMenu) {
+    ensureThemeMenu();
+    var themeMenuRetryTimer = setInterval(function(){
+      if (themeMenuInstalled) { clearInterval(themeMenuRetryTimer); return; }
+      if (installThemeMenu()) clearInterval(themeMenuRetryTimer);
+    }, 1000);
+    setTimeout(function(){ clearInterval(themeMenuRetryTimer); }, 20000);
+    document.addEventListener('DOMContentLoaded', ensureThemeMenu);
+    /* Extra safety: if the header menu appears in the DOM later (due to
+       ordering/lazy rendering), install it immediately. */
+    if (window.MutationObserver && !themeMenuInstalled) {
+      var fsbMenuObserver = new MutationObserver(function(){
+        if (!themeMenuInstalled && useThemeMenu) ensureThemeMenu();
+      });
+      fsbMenuObserver.observe(document.documentElement, { childList: true, subtree: true });
+      setTimeout(function(){ fsbMenuObserver.disconnect(); }, 30000);
+    }
+  }
+
+  function openAddressPair(){
+    var addressPanel = document.getElementById('fsb-panel-address-' + sid);
+    var addPanel = document.getElementById('fsb-panel-add-address-' + sid);
+    if (!addressPanel || !addPanel) return;
+    closeCart();
+    allPanels().forEach(function(panel){
+      var panelName = panel.getAttribute('data-fsb-panel');
+      if (panelName !== 'address' && panelName !== 'add-address') {
+        panel.classList.remove('active');
+      }
+    });
+    addressPanel.classList.add('active');
+    addPanel.classList.add('active');
+    overlay.classList.remove('fsb-address-edit-pair-open');
+    overlay.classList.remove('fsb-od-pair-open');
+    overlay.classList.add('fsb-address-pair-open');
+    syncBodyState();
+    setActiveIcon('address');
+  }
+  function openAddressEdit(addressId){
+    var addressPanel = document.getElementById('fsb-panel-address-' + sid);
+    var editPanel = document.getElementById('fsb-panel-edit-address-' + sid + '-' + addressId);
+    if (!addressPanel || !editPanel) return;
+    closeCart();
+    allPanels().forEach(function(panel){
+      if (panel !== addressPanel && panel !== editPanel) {
+        panel.classList.remove('active');
+      }
+    });
+    addressPanel.classList.add('active');
+    editPanel.classList.add('active');
+    overlay.classList.remove('fsb-address-pair-open');
+    overlay.classList.add('fsb-address-edit-pair-open');
+    syncBodyState();
+    setActiveIcon('address');
+  }
+  overlay.addEventListener('click', function(e){
+    if (e.target === overlay) closeAllPanels();
+  });
+  overlay.addEventListener('click', function(e){
+    var closeBtn = e.target.closest('[data-fsb-close]');
+    if (closeBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeAllPanels();
+    }
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape') closeAllPanels();
+  });
+  var cartWatchTarget = getCartDrawer();
+  if (cartWatchTarget) {
+    var cartObserver = new MutationObserver(function(){ syncBodyState(); });
+    cartObserver.observe(cartWatchTarget, { attributes: true, attributeFilter: ['class'] });
+  }
+  setInterval(syncBodyState, 500);
+  window.addEventListener('resize', function(){
+    window.requestAnimationFrame(function(){
+      if (!document.body.classList.contains('fsb-panel-open')) {
+        syncMobileOrderVisibility();
+        rememberMobileSidebarPadding();
+        rememberSidebarGeometry();
+      }
+      /* mobile <-> desktop switch par theme/fallback menu sync */
+      syncThemeMenuForViewport();
+    });
+  });
+  var cartToggle = document.getElementById('cart-drawer-toggle-' + sid);
+  if (cartToggle) {
+    var newCartToggle = cartToggle.cloneNode(true);
+    cartToggle.parentNode.replaceChild(newCartToggle, cartToggle);
+    newCartToggle.addEventListener('click', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      sectionRoot.classList.remove('fsb-region-panel-open');
+      overlay.classList.remove('fsb-address-pair-open');
+      overlay.classList.remove('fsb-address-edit-pair-open');
+      overlay.classList.remove('fsb-od-pair-open');
+      allPanels().forEach(function(p){ p.classList.remove('active'); });
+      var cartDrawer = getCartDrawer();
+      if (cartDrawer) {
+        var isOpen = cartDrawer.classList.contains('active');
+        if (isOpen) { closeCart(); } else { openCart(); }
+        syncBodyState();
+      }
+    });
+  }
+  function ensureCartCloseButton(){
+    var cartDrawer = getCartDrawer();
+    if (!cartDrawer || cartDrawer.querySelector('.fsb-cart-close-btn')) return;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'fsb-cart-close-btn';
+    btn.setAttribute('aria-label', 'Close cart');
+    btn.innerHTML = '<svg class="fsb-close-icon-desktop" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>' +
+      '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="21" height="13" viewBox="0 0 21 13" focusable="false" role="presentation" data-garden-id="buttons.icon" data-garden-version="8.76.9" class="StyledIcon-sc-19meqgg-0 cxMMcO fsb-close-icon-mobile"><path fill-rule="evenodd" clip-rule="evenodd" fill="currentColor" d="M20.1005 2.7169L10.9931 11.8244C10.4724 12.3451 9.62815 12.3451 9.10745 11.8244L-8.00829e-06 2.7169L1.88561 0.831278L10.0503 8.99593L18.2149 0.831278L20.1005 2.7169Z"/></svg>';
+    btn.addEventListener('click', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      closeCart();
+      syncBodyState();
+    });
+    cartDrawer.insertBefore(btn, cartDrawer.firstChild);
+  }
+  ensureCartCloseButton();
+  var cartBtnRetry = setInterval(function(){
+    ensureCartCloseButton();
+    if (getCartDrawer()) clearInterval(cartBtnRetry);
+  }, 500);
+  var cartCountBadge = document.getElementById('fsb-cart-count-' + sid);
+  function updateCartCount(){
+    fetch('/cart.js', { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+      .then(function(response){ return response.json(); })
+      .then(function(cart){
+        if (cartCountBadge) {
+          var count = cart.item_count || 0;
+          cartCountBadge.textContent = count > 99 ? '99+' : count;
+        }
+      })
+      .catch(function(){});
+  }
+  document.addEventListener('DOMContentLoaded', updateCartCount);
+  document.addEventListener('cart:update', updateCartCount);
+  document.addEventListener('cart:updated', updateCartCount);
+  document.addEventListener('cart:added', updateCartCount);
+  document.addEventListener('cart:change', updateCartCount);
+  document.addEventListener('cart:refresh', updateCartCount);
+  document.addEventListener('cart:reload', updateCartCount);
+  document.body.addEventListener('submit', function(e){
+    var form = e.target;
+    if (form && form.action && form.action.indexOf('/cart/add') !== -1) {
+      setTimeout(updateCartCount, 600);
+    }
+  });
+  if (window.fetch && !window.__fsbFetchPatched) {
+    window.__fsbFetchPatched = true;
+    var originalFetch = window.fetch;
+    window.fetch = function(){
+      var args = arguments;
+      var urlArg = args[0];
+      var url = (typeof urlArg === 'string') ? urlArg : (urlArg && urlArg.url) || '';
+      var isCartMutation = /\/cart\/(add|change|update|clear)(\.js)?(\?|$)/.test(url);
+      var result = originalFetch.apply(this, args);
+      if (isCartMutation) {
+        result.then(function(res){ setTimeout(updateCartCount, 400); return res; }).catch(function(){});
+      }
+      return result;
+    };
+  }
+  var ordersTrigger = document.getElementById('orders-panel-trigger-' + sid);
+  if (ordersTrigger) {
+    var newOrdersTrigger = ordersTrigger.cloneNode(true);
+    ordersTrigger.parentNode.replaceChild(newOrdersTrigger, ordersTrigger);
+    newOrdersTrigger.addEventListener('click', function(e){
+      e.preventDefault(); e.stopPropagation(); openPanel('orders');
+    });
+  }
+  var addressTrigger = document.getElementById('address-panel-trigger-' + sid);
+  if (addressTrigger) {
+    var newAddressTrigger = addressTrigger.cloneNode(true);
+    addressTrigger.parentNode.replaceChild(newAddressTrigger, addressTrigger);
+    newAddressTrigger.addEventListener('click', function(e){
+      e.preventDefault(); e.stopPropagation(); openPanel('address');
+    });
+  }
+  var addAddressBtn = document.getElementById('fsb-add-address-btn-' + sid);
+  if (addAddressBtn) {
+    var newAddBtn = addAddressBtn.cloneNode(true);
+    addAddressBtn.parentNode.replaceChild(newAddBtn, addAddressBtn);
+    newAddBtn.addEventListener('click', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      openAddressPair();
+    });
+  }
+  overlay.addEventListener('click', function(e){
+    var editBtn = e.target.closest('[data-fsb-edit-address]');
+    if (!editBtn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var addressId = editBtn.getAttribute('data-address-id');
+    if (addressId) openAddressEdit(addressId);
+  });
+  overlay.addEventListener('click', function(e){
+    var backBtn = e.target.closest('[data-fsb-edit-back]');
+    if (!backBtn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var editPanel = backBtn.closest('.fsb-panel-edit-address');
+    var addressPanel = document.getElementById('fsb-panel-address-' + sid);
+    if (editPanel) editPanel.classList.remove('active');
+    if (addressPanel) addressPanel.classList.add('active');
+    overlay.classList.remove('fsb-address-edit-pair-open');
+    overlay.classList.remove('fsb-od-pair-open');
+    syncBodyState();
+    setActiveIcon('address');
+  });
+  var addressBackBtn = document.getElementById('fsb-address-back-' + sid);
+  if (addressBackBtn) {
+    addressBackBtn.addEventListener('click', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      var addressPanel = document.getElementById('fsb-panel-address-' + sid);
+      var addPanel = document.getElementById('fsb-panel-add-address-' + sid);
+      if (addPanel) addPanel.classList.remove('active');
+      if (addressPanel) addressPanel.classList.add('active');
+      overlay.classList.remove('fsb-address-pair-open');
+      overlay.classList.remove('fsb-address-edit-pair-open');
+      overlay.classList.remove('fsb-od-pair-open');
+      syncBodyState();
+    });
+  }
+  var regionTrigger = document.getElementById('flag-popup-trigger-' + sid);
+  if (regionTrigger) {
+    var newRegionTrigger = regionTrigger.cloneNode(true);
+    regionTrigger.parentNode.replaceChild(newRegionTrigger, regionTrigger);
+    newRegionTrigger.addEventListener('click', function(e){
+      e.preventDefault(); e.stopPropagation(); openPanel('region');
+    });
+  }
+  var supportToggle = document.getElementById('support-chat-toggle-' + sid);
+  if (supportToggle) {
+    var newSupportToggle = supportToggle.cloneNode(true);
+    supportToggle.parentNode.replaceChild(newSupportToggle, supportToggle);
+    newSupportToggle.addEventListener('click', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      closeAllPanels();
+      function openWidget(){
+        if (typeof window.GorgiasChat !== 'undefined' && window.GorgiasChat.open) {
+          window.GorgiasChat.open(); return true;
+        }
+        if (typeof window.zE !== 'undefined') {
+          try { window.zE('messenger', 'open'); } catch(err) {
+            window.zE.activate ? window.zE.activate() : window.zE('webWidget', 'open');
+          }
+          return true;
+        }
+        return false;
+      }
+      if (openWidget()) return;
+      var attempts = 0;
+      var retry = setInterval(function(){
+        attempts++;
+        if (openWidget() || attempts > 10) clearInterval(retry);
+      }, 300);
+    });
+  }
+  var notifStorageKey = 'fsb_read_notifs_' + sid;
+  var notifToggle = document.getElementById('notif-toggle-' + sid);
+  if (notifToggle) {
+    var newNotifToggle = notifToggle.cloneNode(true);
+    notifToggle.parentNode.replaceChild(newNotifToggle, notifToggle);
+    newNotifToggle.addEventListener('click', function(e){
+      e.preventDefault(); e.stopPropagation(); openPanel('notifications');
+    });
+  }
+  function getReadIds(){
+    try {
+      var raw = localStorage.getItem(notifStorageKey);
+      return raw ? JSON.parse(raw) : [];
+    } catch(e){ return []; }
+  }
+  function saveReadIds(ids){
+    try { localStorage.setItem(notifStorageKey, JSON.stringify(ids)); } catch(e){}
+  }
+  function markRead(id){
+    var ids = getReadIds();
+    if (ids.indexOf(id) === -1){ ids.push(id); saveReadIds(ids); }
+  }
+  function markAllRead(){
+    var list = document.getElementById('fsb-notif-list-' + sid);
+    if (!list) return;
+    var ids = getReadIds();
+    list.querySelectorAll('.fsb-notif-card').forEach(function(card){
+      var id = card.getAttribute('data-notif-id');
+      if (id && ids.indexOf(id) === -1) ids.push(id);
+      card.classList.remove('is-unread');
+    });
+    saveReadIds(ids);
+    refreshNotifBadge();
+    refreshNotifCount();
+    updateMarkAllButtonState();
+  }
+  function applyReadState(){
+    var list = document.getElementById('fsb-notif-list-' + sid);
+    if (!list) return;
+    var ids = getReadIds();
+    list.querySelectorAll('.fsb-notif-card').forEach(function(card){
+      var id = card.getAttribute('data-notif-id');
+      if (id && ids.indexOf(id) !== -1){
+        card.classList.remove('is-unread');
+      }
+    });
+  }
+  function countUnread(){
+    var list = document.getElementById('fsb-notif-list-' + sid);
+    if (!list) return 0;
+    return list.querySelectorAll('.fsb-notif-card.is-unread').length;
+  }
+  function countTotal(){
+    var list = document.getElementById('fsb-notif-list-' + sid);
+    if (!list) return 0;
+    return list.querySelectorAll('.fsb-notif-card').length;
+  }
+  function refreshNotifBadge(){
+    var badge = document.getElementById('fsb-notif-badge-' + sid);
+    if (!badge) return;
+    var unread = countUnread();
+    if (unread > 0){
+      badge.style.display = '';
+      badge.textContent = unread > 99 ? '99+' : unread;
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+  function refreshNotifCount(){
+    var countEl = document.getElementById('fsb-notif-count-' + sid);
+    if (!countEl) return;
+    var unread = countUnread();
+    countEl.textContent = unread;
+    countEl.classList.toggle('is-zero', unread === 0);
+  }
+  function updateMarkAllButtonState(){
+    var btn = document.getElementById('fsb-mark-all-read-' + sid);
+    if (!btn) return;
+    var total = countTotal();
+    var unread = countUnread();
+    btn.disabled = (total === 0 || unread === 0);
+  }
+  var markAllBtn = document.getElementById('fsb-mark-all-read-' + sid);
+  if (markAllBtn){
+    markAllBtn.addEventListener('click', function(e){
+      e.preventDefault(); e.stopPropagation();
+      markAllRead();
+    });
+  }
+  var notifListEl = document.getElementById('fsb-notif-list-' + sid);
+  if (notifListEl){
+    notifListEl.addEventListener('click', function(e){
+      var card = e.target.closest('.fsb-notif-card');
+      if (!card) return;
+      var id = card.getAttribute('data-notif-id');
+      if (id){ markRead(id); card.classList.remove('is-unread'); }
+      refreshNotifBadge();
+      refreshNotifCount();
+      updateMarkAllButtonState();
+    });
+  }
+  function simpleHash(str){
+    var hash = 0, i, chr;
+    if (!str) return '0';
+    for (i = 0; i < str.length; i++) {
+      chr = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + chr;
+      hash |= 0;
+    }
+    return 'bon-' + Math.abs(hash);
+  }
+  var bonSelectors = [
+    '[id*="bon-loyalty" i] [class*="notification" i] li',
+    '[class*="bon-loyalty" i] [class*="notification" i] li',
+    '[id*="bonloyalty" i] [class*="notification" i] li',
+    '[class*="bonloyalty" i] [class*="notification" i] li',
+    '[id*="bon_loyalty" i] [class*="notification" i] li',
+    '[class*="bon_loyalty" i] [class*="notification" i] li',
+    '[data-app*="bon" i] [class*="notification" i] li',
+    '.bon-loyalty-notification-item',
+    '.bon-notification-list li',
+    '.bon-loyalty-widget [class*="notification" i] li'
+  ];
+  function findBonNotifs(){
+    for (var i = 0; i < bonSelectors.length; i++){
+      try {
+        var nodes = document.querySelectorAll(bonSelectors[i]);
+        if (nodes && nodes.length) return nodes;
+      } catch(e){}
+    }
+    return [];
+  }
+  function populateBonNotifications(){
+    var appSlot = document.getElementById('fsb-notif-app-slot-' + sid);
+    var ul = document.getElementById('fsb-notif-list-' + sid);
+    if (!appSlot || !ul) return false;
+    var candidates = findBonNotifs();
+    if (!candidates.length) return false;
+    var existingIds = {};
+    ul.querySelectorAll('.fsb-notif-card[data-notif-id^="bon-"]').forEach(function(el){
+      existingIds[el.getAttribute('data-notif-id')] = true;
+    });
+    var addedAny = false;
+    candidates.forEach(function(node){
+      var text = (node.textContent || '').trim();
+      if (!text) return;
+      var id = simpleHash(text);
+      if (existingIds[id]) return;
+      existingIds[id] = true;
+      addedAny = true;
+      var li = document.createElement('li');
+      li.className = 'fsb-list-card fsb-notif-card is-unread';
+      li.setAttribute('data-notif-id', id);
+      li.innerHTML =
+        '<span class="fsb-notif-dot-indicator" aria-hidden="true"></span>' +
+        '<div class="fsb-notif-content">' +
+          '<div class="fsb-notif-text">' + text + '</div>' +
+        '</div>';
+      ul.appendChild(li);
+    });
+    if (addedAny) {
+      var emptyMsg = document.getElementById('fsb-notif-empty-' + sid);
+      if (emptyMsg) emptyMsg.style.display = 'none';
+      applyReadState();
+      refreshNotifBadge();
+      refreshNotifCount();
+      updateMarkAllButtonState();
+    }
+    return addedAny;
+  }
+  var notifInitDone = false;
+  function initNotificationsPanel(){
+    populateBonNotifications();
+    if (!notifInitDone){
+      notifInitDone = true;
+      var bonAttempts = 0;
+      var bonRetry = setInterval(function(){
+        bonAttempts++;
+        populateBonNotifications();
+        if (bonAttempts > 15) clearInterval(bonRetry);
+      }, 1000);
+      if (window.MutationObserver) {
+        var bonObserver = new MutationObserver(function(){
+          populateBonNotifications();
+        });
+        bonObserver.observe(document.body, { childList: true, subtree: true });
+        setTimeout(function(){ bonObserver.disconnect(); }, 20000);
+      }
+    }
+    applyReadState();
+    refreshNotifBadge();
+    refreshNotifCount();
+    updateMarkAllButtonState();
+  }
+  applyReadState();
+  refreshNotifBadge();
+  refreshNotifCount();
+  updateMarkAllButtonState();
+  // ============================================================
+  // BON LOYALTY - FIXED POINTS AND REWARDS ENGINE
+  // ============================================================
+
+  var bonSeed = {};
+  try {
+    var bonSeedEl = document.getElementById('fsb-bon-data-' + sid);
+    if (bonSeedEl) bonSeed = JSON.parse(bonSeedEl.textContent) || {};
+  } catch (e) { bonSeed = {}; }
+
+  var BON_INITIAL_POINTS = 0;
+  if (bonSeed && bonSeed.points) {
+    BON_INITIAL_POINTS = Number(bonSeed.points) || 0;
+  }
+
+  // Initialize bonState with seed data
+  var bonState = {
+    cid:          bonSeed.customerId || null,
+    email:        String(bonSeed.customerEmail || ''),
+    user:         null,
+    earn:         [],
+    redeem:       [],
+    rewards:      [],
+    tiers:        [],
+    tierRows:     null,
+    tierRowsApi:  null,
+    tierRowsRaw:  null,
+    points:       Number(bonSeed.points || 0),
+    pointsKnown:  Number(bonSeed.points || 0) > 0,
+    pointsEarned: Number(bonSeed.pointsEarned || 0),
+    rewardsCount: Number(bonSeed.rewardsCount || 0),
+    tier:         String(bonSeed.tier || ''),
+    memberName:   String(bonSeed.customerName || ''),
+    memberSince:  String(bonSeed.memberSince || ''),
+    createdAt:    '',
+    shopName:     String(bonSeed.shopName || ''),
+    history:      [],
+    loaded:       false,
+    loading:      false
+  };
+
+  /* bumped to v12: v11 caches may hold tier values in cents (pre-normalise)
+     and a broken filesBase-less image chain — must not be restored */
+  var BON_CACHE_KEY = 'fsb_loyalty_v13_' + (bonState.cid || 'guest');
+  var bonTab = { points: 'earn', rewards: 'available' };
+
+  // Helper functions
+  function bonEsc(v){
+    return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){
+      return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
+    });
+  }
+  function bonNum(v){
+    var n = Number(String(v == null ? '' : v).replace(/[^\d.\-]/g, ''));
+    return isFinite(n) ? n : 0;
+  }
+  function bonFmt(v){ return bonNum(v).toLocaleString('en-US'); }
+  function bonFmtDate(v, style){
+    v = String(v || '').trim();
+    if (!v) return '';
+    var d = new Date(v);
+    if (isNaN(d.getTime())) return '';
+    if (style === 'dmy'){
+      var p = function(n){ return (n < 10 ? '0' : '') + n; };
+      return p(d.getDate()) + '/' + p(d.getMonth() + 1) + '/' + d.getFullYear();
+    }
+    var m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return d.getDate() + ' ' + m[d.getMonth()] + ' ' + d.getFullYear();
+  }
+  function bonMoney(v){
+    var n = bonNum(v);
+    /* normalise entity-encoded dollars and any duplicated currency sign,
+       e.g. a shop format of "$${{amount}}" must still print "$100" once */
+    var fmt = String(bonSeed.moneyFormat || '').replace(/&amp;#36;|&#36;/g, '$');
+    var m = fmt.match(/^\s*([^0-9{]*)/);
+    var sym = m && m[1] ? m[1].trim() : '';
+    if (!sym) sym = '$';
+    sym = sym.replace(/(\$)\s*\$+/g, '$1');
+    return sym + (n % 1 === 0 ? n.toLocaleString('en-US') : n.toFixed(2));
+  }
+  function bonPick(o, keys){
+    if (!o || typeof o !== 'object') return '';
+    for (var i = 0; i < keys.length; i++){
+      var v = o[keys[i]];
+      if (v && typeof v === 'object' && v.name) v = v.name;
+      if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+    }
+    return '';
+  }
+  function bonPoints(){ return bonNum(bonState.points); }
+  function bonEarnedPoints(){
+    var e = bonNum(bonState.pointsEarned);
+    return e > 0 ? e : bonNum(bonState.points);
+  }
+  function bonTierFromTags(){
+    var tags = bonSeed.tags;
+    if (typeof tags === 'string') tags = tags.split(',');
+    if (!Array.isArray(tags)) return '';
+    var names = (bonState.tiers || []).map(function(t){ return t.name; });
+    var TIER_WORDS = ['gold','silver','bronze','platinum','diamond','robusto','corona',
+      'torpedo','belicoso','churchill','gordo','petit','premium','elite','vip',
+      'classic','signature','royal','black','white','ambassador','ambassadeur'];
+    for (var i = 0; i < tags.length; i++){
+      var raw = String(tags[i] || '').trim();
+      if (!raw) continue;
+      /* 1) tag exactly matches known tier name */
+      for (var j = 0; j < names.length; j++){
+        if (names[j] && raw.toLowerCase().indexOf(names[j].toLowerCase()) !== -1) return names[j];
+      }
+      /* 2) "X Member" pattern: Gold Member, ROBUSTO MEMBER, Silver member... */
+      var m = raw.match(/^(.{1,25}?)\s+member$/i);
+      if (m) return m[1].trim();
+      /* 3) prefixed tags: bon:gold / vip_tier:silver / tier-gold */
+      var p = raw.match(/^(?:bon[_\-:]?|vip[_\-:]?|tier[_\-:]?)\s*([A-Za-z][A-Za-z \-]{1,20})$/i);
+      if (p) return p[1].trim();
+      /* 4) standalone known tier word */
+      var low = raw.toLowerCase();
+      for (var k = 0; k < TIER_WORDS.length; k++){
+        if (low === TIER_WORDS[k]) return raw.trim();
+        if (low.indexOf(TIER_WORDS[k] + ' ') === 0) return raw.replace(/\s+.*$/, '').trim();
+      }
+    }
+    return '';
+  }
+  function bonCleanTier(value){
+    var t = value && typeof value === 'object'
+      ? String(value.name || value.tier_name || value.title || value.value || '')
+      : String(value || '');
+    t = t.trim().replace(/^['"]|['"]$/g, '').replace(/[\r\n]+/g, ' ');
+    if (!t || t === '[object Object]' || t.toLowerCase() === 'member') return '';
+    if (/\b(view|learn more|membership)\b/i.test(t)) return '';
+    return t.replace(/\s+member$/i, '').trim();
+  }
+  function bonResolveTier(){
+    var t = bonCleanTier(bonTierFromTags());
+    if (t) return t;
+    t = bonCleanTier(bonState.tier);
+    if (t) return t;
+    var pts = bonEarnedPoints(), tiers = bonState.tiers || [], best = '';
+    for (var i = 0; i < tiers.length; i++){ if (pts >= tiers[i].min) best = tiers[i].name; }
+    if (best) return bonCleanTier(best);
+    return '';
+  }
+
+  // Set points with validation
+  function bonSetPoints(v, trusted){
+    if (v === '' || v === undefined || v === null) return false;
+    var n = bonNum(v);
+    if (!isFinite(n) || n < 0) return false;
+    if (n === 0 && !trusted) return false;
+    var changed = (n !== bonNum(bonState.points)) || !bonState.pointsKnown;
+    bonState.points = n;
+    bonState.pointsKnown = true;
+    return changed;
+  }
+
+  function bonOwnedCount(){
+    return (bonState.rewards && bonState.rewards.length)
+      ? bonState.rewards.length
+      : bonNum(bonState.rewardsCount);
+  }
+
+  // Cache handling
+  function bonReadCache(){
+    try {
+      var raw = localStorage.getItem(BON_CACHE_KEY);
+      if (!raw) return null;
+      var o = JSON.parse(raw);
+      if (!o || (Date.now() - (o.t || 0)) > 6 * 60 * 60 * 1000) return null;
+      return o.d || null;
+    } catch (e) { return null; }
+  }
+  function bonWriteCache(){
+    try {
+      localStorage.setItem(BON_CACHE_KEY, JSON.stringify({ t: Date.now(), d: {
+        points: bonState.points, pointsKnown: bonState.pointsKnown,
+        rewardsCount: bonState.rewardsCount, tier: bonState.tier,
+        memberName: bonState.memberName, rewards: bonState.rewards,
+        redeem: bonState.redeem, earn: bonState.earn, tiers: bonState.tiers,
+        tierRows: bonState.tierRows, tierRowsApi: bonState.tierRowsApi,
+        pointsExpiry: bonState.pointsExpiry,
+        history: bonState.history
+      }}));
+    } catch (e) {}
+  }
+  function bonApplyCache(){
+    var d = bonReadCache();
+    if (!d) return false;
+    if (d.points !== undefined) bonSetPoints(d.points, !!d.pointsKnown);
+    if (d.rewardsCount) bonState.rewardsCount = bonNum(d.rewardsCount);
+    if (d.tier)         bonState.tier         = d.tier;
+    if (d.memberName && !bonState.memberName) bonState.memberName = d.memberName;
+    if (d.rewards && d.rewards.length) bonState.rewards = d.rewards;
+    if (d.redeem  && d.redeem.length)  bonState.redeem  = d.redeem;
+    if (d.earn    && d.earn.length)    bonState.earn    = d.earn;
+    if (d.history && d.history.length) bonState.history = d.history;
+    if (d.tiers   && d.tiers.length)   bonState.tiers   = d.tiers;
+    if (d.tierRows && d.tierRows.length && !(bonState.tierRows && bonState.tierRows.length)) bonState.tierRows = d.tierRows;
+    if (d.tierRowsApi && d.tierRowsApi.length && !(bonState.tierRowsApi && bonState.tierRowsApi.length)) bonState.tierRowsApi = d.tierRowsApi;
+    if (d.pointsExpiry) bonState.pointsExpiry = d.pointsExpiry;
+    return true;
+  }
+
+  // Rewards badge
+  function updateRewardsBadge(){
+    var el = document.getElementById('fsb-rewards-badge-' + sid);
+    if (!el) return;
+    var n = bonOwnedCount();
+    el.textContent = n > 99 ? '99+' : String(n);
+    el.setAttribute('data-has', n > 0 ? '1' : '0');
+    el.style.display = n > 0 ? '' : 'none';
+  }
+
+  function bonNormTiers(raw){
+    if (!Array.isArray(raw)) return [];
+    return raw.map(function(t){
+      return {
+        name: String(bonPick(t, ['name','tier_name','title']) || '').trim(),
+        min:  bonNum(bonPick(t, ['min_point','minimum_point','point_required','threshold','points','min_points','entry_point']))
+      };
+    }).filter(function(t){ return t.name; }).sort(function(a, b){ return a.min - b.min; });
+  }
+
+  /* ============================================================
+     BON VIP TIERS — resolved LIVE from the BON Loyalty backend
+     (tier names, spend thresholds and tier icon images all come from
+     the BON app — nothing is configured in the theme).
+     Entry requirement = money spent (customer.total_spent).
+     ============================================================ */
+  /* ==========================================================
+     BON VIP / B2B TIERS — FETCHED FROM THE BON LOYALTY BACKEND ONLY.
+     There are NO tier settings in the theme (the merchant manages tiers,
+     thresholds and tier icon images inside the BON Loyalty app itself).
+     Priority: 1) BON API proxy (tiers in the API response)
+               2) BON widget / JSON embedded in the page DOM
+     Each tier is normalised to { name, spend, icon }.
+     ========================================================== */
+  function bonNormTierRows(raw){
+    if (!Array.isArray(raw) || !raw.length) return null;
+    var out = raw.map(function(t){
+      if (!t || typeof t !== 'object') return null;
+      var name = String(bonPick(t, ['name','tier_name','title','vip_tier_name','label']) || '').trim();
+      var spend = bonNum(bonPick(t, ['required_value','spend','min_spent','spend_threshold','money_spent','required_spent','required_spend',
+        'threshold_spent','entry_spent','min_amount','amount_to_spend','required_amount','milestone_value',
+        'threshold','min_point','point_required','min_points','points']));
+      var icon = bonPick(t, ['icon','icon_url','icon_image','icon_img','image','image_url','thumbnail','logo','badge','badge_url','tier_icon']);
+      if (icon && typeof icon === 'object') icon = icon.url || icon.src || icon.image_url || icon.value || '';
+      if (!name) return null;
+      return { name: name, spend: spend, icon: String(icon || '') };
+    }).filter(function(t){ return !!t; });
+    return out.length ? out : null;
+  }
+  function bonDeepFindTiers(obj, depth){
+    if (depth > 6 || obj == null) return null;
+    if (Array.isArray(obj)){
+      var norm = bonNormTierRows(obj);
+      if (norm && norm.some(function(t){ return t.spend > 0 || t.icon; })) return norm;
+      for (var i = 0; i < obj.length; i++){ var r = bonDeepFindTiers(obj[i], depth + 1); if (r) return r; }
+      return null;
+    }
+    if (typeof obj === 'object'){
+      var keys = Object.keys(obj);
+      var ordered = keys.slice().sort(function(a, b){
+        var ta = /tier|vip/i.test(a) ? 0 : 1, tb = /tier|vip/i.test(b) ? 0 : 1;
+        return ta - tb;
+      });
+      for (var j = 0; j < ordered.length; j++){
+        var r2 = bonDeepFindTiers(obj[ordered[j]], depth + 1); if (r2) return r2;
+      }
+    }
+    return null;
+  }
+  function bonScrapeTiers(){
+    if (bonState.tierRows && bonState.tierRows.length) return true;
+    /* 0) BON's JavaScript globals (the app boot config often lives here) */
+    try {
+      var gkeys = [];
+      for (var wk in window){ if (/bon/i.test(wk)) gkeys.push(wk); }
+      gkeys = gkeys.slice(0, 25);
+      for (var gi = 0; gi < gkeys.length; gi++){
+        var gv;
+        try { gv = window[gkeys[gi]]; } catch(e){ continue; }
+        if (!gv || typeof gv === 'function') continue;
+        var grows = bonDeepFindTiers(gv, 0);
+        if (grows){ bonState.tierRows = grows; return true; }
+      }
+    } catch(e){}
+    /* 1) JSON blobs the BON app prints into the page (<script type="application/json">) */
+    try {
+      var scripts = document.querySelectorAll('script[type="application/json"], script[type="text/json"], script[id*="bon" i], script[class*="bon" i]');
+      for (var i = 0; i < scripts.length; i++){
+        var el = scripts[i];
+        if (el.id && el.id.indexOf('fsb-') === 0) continue; // skip our own seed
+        var txt = (el.textContent || '').trim();
+        if (!txt || (txt.indexOf('tier') === -1 && txt.indexOf('Tier') === -1 && txt.indexOf('TIER') === -1)) continue;
+        if (txt.charAt(0) !== '{' && txt.charAt(0) !== '[') continue;
+        try {
+          var rows = bonDeepFindTiers(JSON.parse(txt), 0);
+          if (rows){ bonState.tierRows = rows; return true; }
+        } catch(e){}
+      }
+    } catch(e){}
+    /* 2) BON widget DOM — tier cards carrying a name + image */
+    try {
+      var root = bonWidgetRoot();
+      if (root){
+        var items = root.querySelectorAll('[class*="tier-item" i], [class*="vip-tier" i], [class*="tier_card" i], [class*="tier-card" i], [data-tier-name], [class*="tier"][class*="item" i]');
+        if (items && items.length){
+          var rows2 = [];
+          items.forEach(function(it){
+            var name = (it.getAttribute('data-tier-name') || it.getAttribute('data-name') || '').trim();
+            if (!name){
+              var nameEl = it.querySelector('[class*="name" i], [class*="title" i]');
+              name = nameEl ? (nameEl.textContent || '').trim() : '';
+            }
+            name = name.split('\n')[0].trim();
+            if (!name || name.length > 40) return;
+            var img = it.querySelector('img[src]');
+            var icon = img ? String(img.getAttribute('src') || '') : '';
+            if (icon.indexOf('//') === 0) icon = 'https:' + icon;
+            var spend = bonNum(it.getAttribute('data-spend') || it.getAttribute('data-threshold') || (it.textContent || '').match(/[\d,]+(?:\.\d+)?/) || 0);
+            rows2.push({ name: name, spend: spend, icon: icon });
+          });
+          var norm2 = bonNormTierRows(rows2);
+          if (norm2){ bonState.tierRows = norm2; return true; }
+        }
+      }
+    } catch(e){}
+    return false;
+  }
+  function bonTierNameKey(n){
+    return String(n || '').toLowerCase().replace(/\s*member\s*$/, '').trim();
+  }
+  /* File-name convention for tier images: <tier name> with spaces turned
+     into underscores (or dashes) and .png/.jpg — e.g. "Toro Member" ->
+     Toro_Member.png / toro_member.png / Toro-Member.png / toro-member.jpg …
+     All case styles are tried, so whichever casing the merchant uploaded
+     the file with, it is found automatically. */
+  function bonHandleName(n){
+    return String(n || '').trim().replace(/\s+/g, '_');
+  }
+  /* every plausible Content->Files URL for a tier image, best first.
+     The file name follows the TIER NAME (spaces -> underscores), any
+     casing the merchant uploaded with. BON tier titles often come WITHOUT
+     the "Member" suffix (e.g. just "Robusto") while the uploaded file is
+     "Robusto_Member.png" — so BOTH the bare name and "<name>_Member"
+     variants are tried automatically:
+       "Robusto"        -> Robusto.png, Robusto_Member.png, robusto_member.png, …
+       "Robusto Member" -> Robusto_Member.png, robusto_member.png, …
+     Extensions tried: png / jpg / PNG / jpeg / webp. */
+  function bonTierImgGuesses(name){
+    var base = String(bonSeed.filesBase || '').trim();
+    var h = bonHandleName(name);
+    if (!base || !h) return [];
+    var variants = [h];
+    if (!/member$/i.test(h)) variants.push(h + '_Member');
+    var stems = [];
+    variants.forEach(function(nh){
+      var title = nh.split(/[_-]+/).map(function(w){
+        return w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : '';
+      }).join('_');
+      var low = nh.toLowerCase();
+      var up  = nh.toUpperCase();
+      [nh, title, low, up,
+       title.replace(/_/g, '-'), low.replace(/_/g, '-')].forEach(function(st){
+        if (st && stems.indexOf(st) === -1) stems.push(st);
+      });
+    });
+    var out = [];
+    stems.forEach(function(st){
+      out.push(base + st + '.png');
+      out.push(base + st + '.jpg');
+      out.push(base + st + '.PNG');
+      out.push(base + st + '.jpeg');
+      out.push(base + st + '.webp');
+    });
+    return out;
+  }
+  /* Every tier gets a CHAIN of image candidates, tried in order:
+       1) BON's own live tier icon (from the tier program) — THE REAL
+          artwork, it exists and loads in ONE request.
+       2) Content->Files images by name convention (all case/dash styles).
+     v22 FIX: the guesses used to run FIRST, so if the Files names don't
+     match the BON tier titles the <img> burned through dozens of 404s
+     (broken image for many seconds) before ever reaching the real icon.
+     BON icon now leads; guesses remain only as a fallback.
+     If ALL fail, the medal fallback shows — never a broken image. */
+  function bonWithTierImgs(rows){
+    return (rows || []).map(function(t){
+      var srcIcon = String(t.icon || '').trim();
+      if (!/^https?:\/\//i.test(srcIcon)) srcIcon = '';
+      var chain = [];
+      function add(u){ if (u && chain.indexOf(u) === -1) chain.push(u); }
+      add(srcIcon);
+      bonTierImgGuesses(t.name).forEach(add);
+      return { name: t.name, spend: t.spend, icon: chain[0] || '', iconChain: chain.slice(1) };
+    });
+  }
+  /* Warm the browser cache for the REAL tier icons as soon as the tier
+     program is known — by the time the drawer opens, the artwork is
+     already downloaded and shows instantly. */
+  function bonPreloadTierImgs(rows){
+    try {
+      (rows || []).forEach(function(t){
+        if (t && t.icon){ var im = new Image(); im.decoding = 'async'; im.src = t.icon; }
+      });
+    } catch(e){}
+    return rows;
+  }
+  /* Tries the next candidate from data-fsb-icons; when the list is
+     exhausted removes the <img> AND the spinner underneath so neither a
+     broken image nor an endless loader remains. */
+  if (!window.fsbTierImgErr){
+    window.fsbTierImgErr = function(el){
+      try {
+        var list = JSON.parse(el.getAttribute('data-fsb-icons') || '[]');
+        while (list.length){
+          var u = String(list.shift());
+          if (u){ el.setAttribute('data-fsb-icons', JSON.stringify(list)); el.src = u; return; }
+        }
+      } catch(e){}
+      var p = el.parentNode;
+      el.remove();
+      if (p){ var fb = p.querySelector('.fsb-tier-art-fallback'); if (fb) fb.remove(); }
+    };
+  }
+
+  /* Tiers — FULLY DYNAMIC from the BON backend (v18).
+     Priority: 1) LIVE BON tier program via the API proxy (tier_rows_api) —
+                  names, $ thresholds, icons. Edit/add a tier in the BON
+                  admin and the drawer updates by itself.
+               2) Offline snapshot (tiersFallback in fsb-data.liquid) —
+                  emergency-only, shown just when the API is unreachable.
+               3) Scraped BON widget/DOM rows — last resort. */
+  function bonTiersResolved(){
+    var snap = Array.isArray(bonSeed.tiersFallback)
+      ? bonSeed.tiersFallback.filter(function(t){ return t && t.name; }).map(function(t){
+          return { name: t.name, spend: t.spend, icon: String(t.icon || '') };
+        })
+      : [];
+    var api = (bonState.tierRowsApi && bonState.tierRowsApi.length) ? bonState.tierRowsApi.slice() : [];
+    var scraped = (bonState.tierRows && bonState.tierRows.length) ? bonState.tierRows.slice() : [];
+    api.sort(function(a, b){ return bonNum(a.spend) - bonNum(b.spend); });
+    snap.sort(function(a, b){ return bonNum(a.spend) - bonNum(b.spend); });
+    scraped.sort(function(a, b){ return bonNum(a.spend) - bonNum(b.spend); });
+    if (api.length) return bonPreloadTierImgs(bonWithTierImgs(api));       /* BON live — source of truth */
+    if (snap.length) return bonPreloadTierImgs(bonWithTierImgs(snap));     /* offline snapshot */
+    return bonPreloadTierImgs(bonWithTierImgs(scraped));                   /* scraped — last resort */
+  }
+  function bonTierInfo(){
+    var tiers = bonTiersResolved().slice();
+    tiers.sort(function(a, b){ return bonNum(a.spend) - bonNum(b.spend); });
+    var spent = bonNum(bonSeed.totalSpent);
+    var cur = null, next = null;
+    for (var i = 0; i < tiers.length; i++){
+      if (spent >= bonNum(tiers[i].spend)) cur = tiers[i];
+      else { next = tiers[i]; break; }
+    }
+    if (!cur && tiers.length) cur = tiers[0];
+    if (cur){
+      for (var m = 0; m < tiers.length; m++){
+        if (tiers[m] === cur){ next = tiers[m + 1] || next; break; }
+      }
+    }
+    /* Tier is ALWAYS decided by the customer's total spend vs the tier $-spend
+       thresholds. Only when NO tier has a spend threshold at all do we trust
+       BON's own tier name (metafield / tag) as the tie-breaker. */
+    if (tiers.length && !tiers.some(function(t){ return bonNum(t.spend) > 0; })){
+      var tName = bonResolveTier();
+      if (tName){
+        var b = bonTierNameKey(tName);
+        for (var n = 0; n < tiers.length; n++){
+          var a = bonTierNameKey(tiers[n].name);
+          if (a && b && (a === b || b.indexOf(a) !== -1 || a.indexOf(b) !== -1)){
+            cur = tiers[n];
+            next = tiers[n + 1] || null;
+            break;
+          }
+        }
+      }
+    }
+    return { tiers: tiers, spent: spent, cur: cur, next: next };
+  }
+  /* Tier ARTWORK card — shows the member's tier IMAGE (from BON) as the
+     card art. v23: while the image loads a plain centered SPINNER shows
+     (the old medal-icon + tier-name placeholder was removed on request);
+     when no image exists at all the card simply stays clean/empty. */
+  function bonTierCardMarkup(t){
+    var raw = String(t.cur.name || '');
+    var spin = '<div class="fsb-tier-art-fallback" aria-hidden="true">'
+      + '<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#c79a3c" stroke-width="2.2" stroke-linecap="round" style="position:absolute;left:50%;top:50%;width:30px;height:30px;margin:-15px 0 0 -15px">'
+      + '<circle cx="12" cy="12" r="9" opacity="0.22"/>'
+      + '<path d="M21 12a9 9 0 0 0-9-9">'
+      + '<animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite"/>'
+      + '</path></svg></div>';
+    return '<div class="fsb-tier-art">'
+      + (t.cur.icon ? spin : '')
+      + (t.cur.icon ? '<img class="fsb-tier-art-img" src="' + bonEsc(t.cur.icon) + '" alt="' + bonEsc(raw) + '" loading="eager" style="opacity:0;transition:opacity .25s ease" onload="this.style.opacity=\'1\'" data-fsb-icons="' + bonEsc(JSON.stringify(t.cur.iconChain || [])) + '" onerror="fsbTierImgErr(this)">' : '')
+      + '</div>';
+  }
+  function bonTierCard(){
+    var t = bonTierInfo();
+    if (!t.cur) return '';
+    return bonTierCardMarkup(t);
+  }
+
+  // ============================================================
+  // BON LOYALTY - FIND POINTS FROM DOM
+  // ============================================================
+  /* ---------- Marketing opt-in (Shopify + Klaviyo) ---------- */
+  var mktInput = document.getElementById('fsb-marketing-optin-' + sid);
+  var mktStateEl = document.getElementById('fsb-mkt-state-' + sid);
+  var mktStatusEl = document.getElementById('fsb-mkt-status-' + sid);
+  function fsbMktPaint(on){
+    if (mktStateEl){
+      mktStateEl.textContent = on ? 'On' : 'Off';
+      mktStateEl.classList.toggle('is-on', !!on);
+    }
+  }
+  function fsbMktStatus(msg, isErr){
+    if (!mktStatusEl) return;
+    mktStatusEl.textContent = msg || '';
+    mktStatusEl.classList.toggle('is-err', !!isErr);
+  }
+  /* GET helper — same secure proxy base as BON (GAS /exec URL in theme
+     setting "bon_api_base"). Kept identical in shape to bonFetchProxy so
+     it behaves exactly like the working points calls. */
+  function fsbMktCall(args){
+    var base = String(bonSeed.apiBase || '').trim();
+    if (!base) return Promise.resolve(null);
+    var sep = (base.indexOf('/exec') !== -1) ? '?' : '?';
+    var url = base.replace(/\/+$/, '') + sep + args;
+    return fetch(url, { headers: { 'Accept': 'application/json' }, credentials: 'omit' })
+      .then(function(r){ return r.json(); })
+      .catch(function(){ return null; });
+  }
+  /* While a save is in flight this blocks the page-load re-sync from
+     painting a stale state over the toggle (the old first-click bug). */
+  var mktBusy = false;
+  /* On load: read the REAL marketing state (Shopify Admin + Klaviyo) so the
+     toggle always shows the truth after a refresh — not a stale guess. */
+  function fsbMktSync(){
+    if (!mktInput || mktBusy) return;
+    var email = String(bonSeed.customerEmail || '').trim();
+    if (!email) return;
+    fsbMktCall('action=mkt_state'
+      + '&shopify_id=' + encodeURIComponent(bonSeed.customerId || '')
+      + '&email=' + encodeURIComponent(email))
+      .then(function(d){
+        if (mktBusy) return;
+        if (!d || d.success !== true) return;
+        mktInput.checked = !!d.subscribed;
+        fsbMktPaint(mktInput.checked);
+      });
+  }
+  /* Off = unsubscribe everywhere (Shopify + Klaviyo), On = subscribe.
+     Goes through the GAS proxy (mkt_set) — direct Shopify/Klaviyo calls
+     from the browser cannot change consent, which is why the old code
+     silently did nothing.
+     v21 FIX: the FIRST request while the proxy is waking up sometimes comes
+     back empty/ambiguous even though the very NEXT one goes through (this
+     is why the toggle failed on click 1 and worked on click 2). We now
+     retry silently up to 3 times before ever telling the user anything,
+     and only then ask the server for the REAL state to be extra safe. */
+  function fsbSetMarketing(on){
+    if (!mktInput) return;
+    var email = String(bonSeed.customerEmail || '').trim();
+    var prev = !on;
+    if (!email){ mktInput.checked = prev; fsbMktPaint(prev); return; }
+    mktBusy = true;
+    mktInput.disabled = true;
+    fsbMktPaint(on);
+    fsbMktStatus('Saving…');
+    var argsBase = '&shopify_id=' + encodeURIComponent(bonSeed.customerId || '')
+      + '&email=' + encodeURIComponent(email);
+
+    function mktFinish(){ mktBusy = false; mktInput.disabled = false; }
+
+    /* Final safety net: read the truth from the server (once more after a
+       short wait — Shopify's search index can lag a second behind a write). */
+    function mktAskTruth(triesLeft, lastResp){
+      fsbMktCall('action=mkt_state' + argsBase).then(function(st){
+        if (st && st.success === true){
+          var real = !!st.subscribed;
+          if (real !== on && triesLeft > 0){
+            setTimeout(function(){ mktAskTruth(triesLeft - 1, lastResp); }, 1500);
+            return;
+          }
+          mktFinish();
+          mktInput.checked = real;
+          fsbMktPaint(real);
+          if (real === on) fsbMktStatus('Saved.');
+          else fsbMktStatus((lastResp && (lastResp.message || lastResp.error)) || 'Could not save — please try again.', true);
+          return;
+        }
+        /* State unreadable at all — paint back where we were. */
+        mktFinish();
+        mktInput.checked = prev;
+        fsbMktPaint(prev);
+        fsbMktStatus((lastResp && (lastResp.message || lastResp.error)) || 'Could not save — please try again.', true);
+      });
+    }
+
+    function mktSendSet(retriesLeft){
+      fsbMktCall('action=mkt_set' + argsBase
+        + '&subscribe=' + (on ? '1' : '0'))
+        .then(function(d){
+          if (d && d.success === true){
+            var updated = [];
+            if (d.results){
+              if (d.results.shopify && d.results.shopify.ok === true) updated.push('Shopify');
+              if (d.results.klaviyo && d.results.klaviyo.ok === true) updated.push('Klaviyo');
+            }
+            mktFinish();
+            mktInput.checked = on;
+            fsbMktPaint(on);
+            fsbMktStatus((on ? 'Subscribed to marketing emails.' : 'Unsubscribed from marketing emails.')
+              + (updated.length ? ' (updated: ' + updated.join(' | ') + ')' : ''));
+            return;
+          }
+          /* Ambiguous/empty reply — retry SILENTLY, don't bother the user. */
+          if (retriesLeft > 0){
+            setTimeout(function(){ mktSendSet(retriesLeft - 1); }, 1200);
+            return;
+          }
+          mktAskTruth(1, d);
+        });
+    }
+    mktSendSet(2); /* total 3 quiet attempts */
+  }
+  if (mktInput){
+    fsbMktPaint(mktInput.checked);
+    mktInput.addEventListener('change', function(){ fsbSetMarketing(mktInput.checked); });
+    fsbMktSync();
+  }
+
+  function bonFindPoints() {
+    // 1. Check if we already have points from seed
+    if (bonState.points > 0 && bonState.pointsKnown) {
+      return true;
+    }
+
+    // 2. Check for BON Loyalty widget on page
+    var widgetSelectors = [
+      '.bon-loyalty-widget [class*="point"]',
+      '[class*="bon-loyalty"] [class*="point-balance"]',
+      '[data-bon-points]',
+      '[data-points-balance]',
+      '.bon-points-display',
+      '.bon-points-balance',
+      '[class*="point-balance"]',
+      '[class*="loyalty-points"]'
+    ];
+
+    for (var i = 0; i < widgetSelectors.length; i++) {
+      try {
+        var els = document.querySelectorAll(widgetSelectors[i]);
+        for (var j = 0; j < els.length; j++) {
+          var el = els[j];
+          var text = (el.textContent || '').trim();
+          var numMatch = text.match(/(\d[\d,.]*)/);
+          if (numMatch) {
+            var pts = parseFloat(numMatch[1].replace(/,/g, ''));
+            if (pts > 0 && pts < 10000000) {
+              bonState.points = pts;
+              bonState.pointsKnown = true;
+              return true;
+            }
+          }
+          var attr = el.getAttribute('data-points') || el.getAttribute('data-bon-points') || el.getAttribute('data-point-balance');
+          if (attr) {
+            var pts2 = parseFloat(attr);
+            if (pts2 > 0 && pts2 < 10000000) {
+              bonState.points = pts2;
+              bonState.pointsKnown = true;
+              return true;
+            }
+          }
+        }
+      } catch(e) {}
+    }
+
+    return false;
+  }
+
+  // Try to find points immediately
+  bonFindPoints();
+
+  // ============================================================
+  // BON LOYALTY - UI RENDERERS
+  // ============================================================
+  /* "10,000 expires on 20/05/2026" — or "Your points expire on …" when only
+     the date is known. Empty when BON gives no expiry info. */
+  function bonExpiryLine(){
+    var ex = bonState.pointsExpiry;
+    if (!ex || !ex.date) return '';
+    var d = bonFmtDate(ex.date, 'dmy');
+    if (!d) return '';
+    return bonNum(ex.amount) > 0
+      ? (bonFmt(ex.amount) + ' expires on ' + bonEsc(d))
+      : ('Your points expire on ' + bonEsc(d));
+  }
+
+  function bonPointsCard(){
+    bonFindPoints();
+    var t = bonTierInfo();
+    var pct = 100, retain = '';
+    if (t.next){
+      var cmin = bonNum(t.cur ? t.cur.spend : 0), nmin = bonNum(t.next.spend);
+      pct = Math.max(0, Math.min(100, ((t.spent - cmin) / Math.max(1, (nmin - cmin))) * 100));
+      retain = 'Spend <b>' + bonMoney(Math.max(0, nmin - t.spent)) + '</b> more to unlock <b>' + bonEsc(t.next.name) + '</b>';
+    } else if (t.cur){
+      var _rn = String(t.cur.name || '').replace(/\s+member$/i, '');
+      retain = 'Spend <b>' + bonMoney(bonNum(t.cur.spend)) + '+</b> to retain <b>' + bonEsc(_rn) + '</b> tier';
+    }
+    var expTxt = bonExpiryLine();
+    var expLine = expTxt ? '<div class="fsb-ly-pts-exp">' + expTxt + '</div>' : '';
+    /* optional diagnostics: open any page with ?fsb-tiers-debug=1 and the
+       points card shows EXACTLY what the BON API returned for the tier
+       program (raw value) + what the theme parsed + the customer's spend */
+    var dbgHtml = '';
+    try {
+      if (/[?&]fsb-tiers-debug=1/.test(String(location.search))){
+        var rawList = Array.isArray(bonState.tierRowsRaw) ? bonState.tierRowsRaw : [];
+        dbgHtml = '<div style="font-size:10px;color:#9a9a9a;margin-top:8px;word-break:break-all;line-height:1.6">'
+          + 'BON raw: ' + bonEsc(JSON.stringify(rawList.map(function(r){
+              return { title: r.title, required_value: r.required_value, is_default: r.is_default };
+            })))
+          + '<br>parsed($): ' + bonEsc(JSON.stringify((bonState.tierRowsApi || []).map(function(r){
+              return { name: r.name, spend: r.spend };
+            })))
+          + '<br>spent($): ' + bonEsc(String(bonNum(bonSeed.totalSpent)))
+          + '</div>';
+      }
+    } catch(e){}
+    return '<div class="fsb-ly-pts">'
+      +   '<div class="fsb-ly-pts-label">Points earned</div>'
+      +   '<div class="fsb-ly-pts-value">' + bonFmt(bonState.points || 0) + '</div>'
+      +   expLine
+      +   '<div class="fsb-ly-bar"><div class="fsb-ly-bar-fill" style="width:' + pct.toFixed(1) + '%"></div></div>'
+      +   (retain ? '<div class="fsb-retain">' + retain + '</div>' : '')
+      +   dbgHtml
+      + '</div>';
+  }
+
+  function bonItemTitle(it){
+    var t = String(bonPick(it, ['name','title','program_name','reward_name','label']) || '');
+    return t || 'Reward';
+  }
+  function bonItemPoints(it){ return bonNum(bonPick(it, ['point','points','point_cost','required_point','cost','point_required','reward_value'])); }
+  function bonItemDesc(it){ return String(bonPick(it, ['description','note','summary','subtitle','reason','label']) || ''); }
+  function bonItemCode(it){ return String(bonPick(it, ['code','discount_code','coupon_code','voucher_code']) || '').trim(); }
+  function bonItemCaption(it){ return String(bonPick(it, ['tier_name','category','group','program_name','subtitle','reward_type','type']) || '').trim(); }
+  function bonItemImage(it){ return String(bonPick(it, ['image','image_url','icon','thumbnail']) || '').trim(); }
+
+  function bonItemValue(it){
+    var type = String(bonPick(it, ['discount_type','type','reward_type','value_type','redeem_type']) || '').toLowerCase();
+    /* BON redeem rules: reward_value is the point COST of the rule and
+       money_value is its discount amount (per the BON docs). Prefer
+       money_value so the card shows the real discount. */
+    var val  = bonPick(it, ['discount_value','value','amount','discount_amount','percentage','money_value','reward_value']);
+    if (val === '' || val === null || val === undefined) return '';
+    /* BON redeem_type: 0 = AMOUNT_DISCOUNT, 1 = PERCENTAGE_DISCOUNT */
+    if (type === '0' || type === 'amount' || type === 'amount_discount' || type === 'fixed'){
+      var n0 = bonNum(val);
+      if (n0 === 0) return '';
+      return bonMoney(val);
+    }
+    if (type === '1' || type.indexOf('percent') > -1 || String(val).indexOf('%') > -1){
+      return String(val).replace(/[^\d.]/g, '') + '%';
+    }
+    if (bonNum(val) === 0) return '';
+    return bonMoney(val);
+  }
+
+  /* Big value shown in the coupon head: "10% OFF", "$20 OFF" or "BXGY". */
+  function bonBigValue(it){
+    var type = String(bonPick(it, ['discount_type','type','reward_type','value_type','redeem_type']) || '').toLowerCase();
+    var ttl  = String(bonItemTitle(it) || '');
+    if (type.indexOf('bxgy') > -1 || type.indexOf('buy_x') > -1 || type.indexOf('buyx') > -1
+        || type.indexOf('buyget') > -1 || /\bbxgy\b/i.test(ttl)) return 'BXGY';
+    var v = String(bonItemValue(it) || '').trim();
+    if (!v) return ttl || 'REWARD';
+    return /off/i.test(v) ? v : (v + ' OFF');
+  }
+
+  function bonRwState(it){
+    var st = String(bonPick(it, ['status']) || '').toLowerCase();
+    if (it.used || it.redeemed || it.is_used || st === 'used') return 'used';
+    if (it.expired || st === 'expired') return 'expired';
+    return 'available';
+  }
+
+  /* Coupon card — matches the reward-card reference: big discount head,
+     note line, coupon name, expiry, apply/check icon and a
+     TERMS & CONDITIONS accordion. Used/expired cards are greyed out. */
+  function bonRenderCoupon(it, state){
+    var big  = bonBigValue(it);
+    var cap  = bonItemCaption(it);
+    var note = bonItemDesc(it) || (cap ? cap + ' members only' : '');
+    var code = bonItemCode(it);
+    var name = String(bonPick(it, ['coupon_name','reward_name','label','title','name']) || '') || code || 'Coupon';
+    var exp  = bonFmtDate(bonPick(it, ['expires_at','expiry_date','expired_at','end_date','ends_at','valid_until','expires']), 'dmy');
+    var terms = String(bonPick(it, ['terms_and_conditions','terms','fine_print']) || '') || bonItemDesc(it);
+    var inactive = (state !== 'available');
+    var btn;
+    if (inactive){
+      btn = '<button type="button" class="fsb-rw-dl" disabled aria-label="' + (state === 'used' ? 'Used' : 'Expired') + '">'
+          + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg></button>';
+    } else {
+      btn = '<button type="button" class="fsb-rw-dl" data-fsb-apply-code="' + bonEsc(code) + '" aria-label="Apply coupon">'
+          + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg></button>';
+    }
+    return '<div class="fsb-rw-card' + (inactive ? ' is-inactive' : '') + '">'
+      +   '<div class="fsb-rw-head">'
+      +     '<div class="fsb-rw-value">' + bonEsc(big) + '</div>'
+      +     (note ? '<div class="fsb-rw-note">' + bonEsc(note) + '</div>' : '')
+      +   '</div>'
+      +   '<div class="fsb-rw-body">'
+      +     '<div class="fsb-rw-row"><div>'
+      +       '<div class="fsb-rw-name">' + bonEsc(name) + '</div>'
+      +       '<div class="fsb-rw-exp">' + (exp ? 'Expires: ' + bonEsc(exp) : '&nbsp;') + '</div>'
+      +     '</div>' + btn + '</div>'
+      +     '<button type="button" class="fsb-rw-terms" data-fsb-terms>TERMS &amp; CONDITIONS '
+      +       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>'
+      +     '</button>'
+      +     '<div class="fsb-rw-terms-body">' + (terms ? bonEsc(terms) : 'No additional terms.') + '</div>'
+      +   '</div>'
+      + '</div>';
+  }
+
+  /* Redeem rule card (redeem with points) — same card design. */
+  function bonRenderRedeemCard(it){
+    var need = bonItemPoints(it);
+    var can  = !need || bonPoints() >= need;
+    var big  = bonBigValue(it);
+    var note = bonItemDesc(it) || '';
+    var title = bonItemTitle(it);
+    return '<div class="fsb-rw-card">'
+      +   '<div class="fsb-rw-head">'
+      +     '<div class="fsb-rw-value">' + bonEsc(big) + '</div>'
+      +     (note ? '<div class="fsb-rw-note">' + bonEsc(note) + '</div>' : '')
+      +   '</div>'
+      +   '<div class="fsb-rw-body">'
+      +     '<div class="fsb-rw-row"><div>'
+      +       '<div class="fsb-rw-name">' + bonEsc(title) + '</div>'
+      +       '<div class="fsb-rw-exp">' + (need ? bonFmt(need) + ' points' : '&nbsp;') + '</div>'
+      +     '</div>'
+      /* Download icon everywhere — same look as the coupon cards; the click
+         still performs the redeem action via data-fsb-redeem. "REDEEM" text
+         is not shown anymore. */
+      +     '<button type="button" class="fsb-rw-dl" data-fsb-redeem="'
+      +       bonEsc(String(bonPick(it, ['id','_id','reward_id','program_id']) || '')) + '"'
+      +       (can ? '' : ' disabled') + ' aria-label="' + (can ? 'Redeem reward' : 'Not enough points') + '">'
+      +       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>'
+      +     '</button>'
+      +     '</div>'
+      +   '</div>'
+      + '</div>';
+  }
+
+  /* Rewards content for the Rewards drawer AND the membership drawer's
+     Rewards tab — AVAILABLE / USED / EXPIRED with the same card design. */
+  function bonRewardsInner(){
+    var t = bonTab.rewards;
+    var owned = Array.isArray(bonState.rewards) ? bonState.rewards : [];
+    var byState = function(s){ return owned.filter(function(r){ return bonRwState(r) === s; }); };
+    var html = '';
+    if (t === 'used'){
+      var u = byState('used');
+      if (!u.length) return '<div class="fsb-ly-empty">' + (bonState.loaded ? 'No used rewards yet.' : 'Loading your rewards…') + '</div>';
+      html = u.map(function(r){ return bonRenderCoupon(r, 'used'); }).join('');
+    } else if (t === 'expired'){
+      var x = byState('expired');
+      if (!x.length) return '<div class="fsb-ly-empty">' + (bonState.loaded ? 'No expired rewards.' : 'Loading your rewards…') + '</div>';
+      html = x.map(function(r){ return bonRenderCoupon(r, 'expired'); }).join('');
+    } else {
+      var a = byState('available');
+      var rules = (bonState.redeem || []).filter(function(r){ return r.is_active !== 0; });
+      if (!a.length && !rules.length) return '<div class="fsb-ly-empty">' + (bonState.loaded ? 'No rewards available right now.' : 'Loading available rewards…') + '</div>';
+      html = a.map(function(r){ return bonRenderCoupon(r, 'available'); }).join('')
+           + rules.map(bonRenderRedeemCard).join('');
+    }
+    return '<div class="fsb-rw-grid">' + html + '</div>';
+  }
+
+  /* Expiry shown in the history EXPIRES column: BON's own expiry when it
+     sends one; otherwise earned rows get +1 year (BON's default) and
+     redeemed rows show "-", like the reference. */
+  function bonHistExpiry(h, kind, rawDate){
+    var e = bonFmtDate(bonPick(h, ['expires_at','expiry_date','point_expiry','points_expire_at','expired_at','valid_until','expires']), 'dmy');
+    if (e) return e;
+    if (kind === 'earned' && rawDate){
+      var d = new Date(rawDate);
+      if (!isNaN(d.getTime())){
+        d.setFullYear(d.getFullYear() + 1);
+        var p = function(n){ return (n < 10 ? '0' : '') + n; };
+        return p(d.getDate()) + '/' + p(d.getMonth() + 1) + '/' + d.getFullYear();
+      }
+    }
+    return '-';
+  }
+
+  function bonRenderHistory(){
+    var rows = Array.isArray(bonState.history) ? bonState.history.slice() : [];
+    /* Latest activity first. */
+    rows.sort(function(a, b){
+      var da = new Date(String(bonPick(a, ['created_at','date','createdAt','updated_at']) || '')).getTime();
+      var db = new Date(String(bonPick(b, ['created_at','date','createdAt','updated_at']) || '')).getTime();
+      if (isNaN(da)) da = 0;
+      if (isNaN(db)) db = 0;
+      return db - da;
+    });
+    var body;
+
+    if (!rows.length){
+      body = '<div class="fsb-ly-empty">'
+           + (bonState.loaded ? 'No point activity yet.' : 'Loading your point history…')
+           + '</div>';
+    } else {
+      body = '<table class="fsb-ly-tbl"><thead><tr>'
+        +   '<th class="fsb-ly-th-amt">POINTS</th>'
+        +   '<th class="fsb-ly-th-desc">DESCRIPTION</th>'
+        +   '<th class="fsb-ly-th-date">DATE</th>'
+        +   '<th class="fsb-ly-th-exp">EXPIRES</th>'
+        + '</tr></thead><tbody>'
+        + rows.map(function(h){
+            var raw = bonPick(h, ['point','points','amount','value','point_change','delta']);
+            var amt = bonNum(raw);
+            var neg = String(raw).trim().charAt(0) === '-' || amt < 0;
+            var src = String(bonPick(h, ['source','reason','title','name','action','event','type','description']) || 'Points update');
+            var rawDate = String(bonPick(h, ['created_at','date','createdAt','updated_at']) || '');
+            var date = bonFmtDate(rawDate, 'dmy') || '—';
+            var lowSrc = src.toLowerCase();
+            var historyKind = (lowSrc.indexOf('redeem') > -1 || (lowSrc.indexOf('purchase') > -1 && neg)
+                              ? 'redeemed' : (lowSrc.indexOf('expire') > -1 ? 'expired' : (neg ? 'redeemed' : 'earned')));
+            var exp = (historyKind === 'redeemed') ? '-' : bonHistExpiry(h, historyKind, rawDate);
+            var mag = Math.abs(amt);
+            return '<tr data-history-kind="' + historyKind + '">'
+              +   '<td class="fsb-ly-td-amt' + (neg ? ' is-neg' : '') + '">' + (neg ? '- ' : '+ ') + bonFmt(mag) + '</td>'
+              +   '<td class="fsb-ly-td-desc">' + bonEsc(src) + '</td>'
+              +   '<td class="fsb-ly-td-date">' + bonEsc(date) + '</td>'
+              +   '<td class="fsb-ly-td-exp">' + bonEsc(exp) + '</td>'
+              + '</tr>';
+          }).join('')
+        + '</tbody></table>';
+    }
+
+    return '<div class="fsb-ly-hist">'
+      +   '<div class="fsb-ly-hist-head">Points history</div>'
+      +   '<div class="fsb-history-tabs"><button type="button" class="is-active">ALL</button><button type="button">EARNED</button><button type="button">REDEEMED</button><button type="button">EXPIRED</button></div>'
+      +   body
+      + '</div>';
+  }
+
+  function bonTabs(scope){
+    var t = bonTab[scope];
+    var pair = (scope === 'points')
+      ? [ { k:'earn',    label:'Ways to earn' }, { k:'history', label:'History' } ]
+      : [ { k:'available', label:'Available' },  { k:'used', label:'Used' }, { k:'expired', label:'Expired' } ];
+    return '<div class="fsb-ly-tabs" role="tablist">'
+      + pair.map(function(o){
+          return '<button type="button" class="fsb-ly-tab" role="tab" data-fsb-lytab="' + o.k + '"'
+               + ' aria-selected="' + (t === o.k) + '">' + o.label + '</button>';
+        }).join('')
+      + '</div>';
+  }
+
+  function bonRenderPanel(scope) {
+    var el = document.getElementById('fsb-' + scope + '-body-' + sid);
+    if (!el) return;
+
+    // Try to find points one more time before rendering
+    bonFindPoints();
+
+    if (!bonState.cid) {
+      el.innerHTML = '<div class="fsb-ly">'
+        + '<a class="fsb-ly-signin" href="' + bonEsc(bonSeed.loginUrl || '/account/login') + '">Sign in to view your rewards</a></div>';
+      return;
+    }
+
+    var busy = bonState.loading && !bonState.redeem.length && !bonState.rewards.length && !bonState.earn.length && !bonState.history.length;
+    var listHtml;
+
+    if (busy) {
+      listHtml = '<div class="fsb-ly-loading"><span class="fsb-ly-spin"></span><span>Loading…</span></div>';
+    } else if (scope === 'points') {
+      listHtml = bonRenderHistory();
+    } else {
+      listHtml = bonRewardsInner();
+    }
+
+    var hint = '';
+    /* Data-source hint: until the BON API proxy is connected the theme
+       cannot read BON's private points — only 0 would show. This note only
+       appears in that case (to guide the store owner); it disappears as
+       soon as the API is connected. */
+    if (bonState.cid && !bonState.pointsKnown && !String(bonSeed.apiBase || '').trim()) {
+      hint = '<div class="fsb-ly-note">To show live points, connect the BON API — Theme Settings &gt; "BON Loyalty API base URL".</div>';
+    }
+
+    el.innerHTML = '<div class="fsb-ly">'
+      + bonTierCard()
+      + bonPointsCard()
+      + (scope === 'points' ? '' : bonTabs(scope))
+      + listHtml
+      + hint
+      + '</div>';
+
+    bonBindPanel(el, scope);
+    updateRewardsBadge();
+  }
+
+  function bonFallbackCopy(text){
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:absolute;left:-9999px;top:0;';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    } catch (e) {}
+  }
+
+  function bonBindPanel(el, scope){
+    el.querySelectorAll('.fsb-history-tabs button').forEach(function(btn){ btn.addEventListener('click',function(){ var wrap=btn.parentNode; wrap.querySelectorAll('button').forEach(function(b){b.classList.remove('is-active');}); btn.classList.add('is-active'); var filter=(btn.textContent||'ALL').toLowerCase(); var table=wrap.parentNode.querySelector('.fsb-ly-tbl'); if(table)table.querySelectorAll('tbody tr').forEach(function(row){row.style.display=(filter==='all'||row.getAttribute('data-history-kind')===filter)?'':'none';}); }); });
+    el.querySelectorAll('[data-fsb-terms]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var card = btn.closest('.fsb-rw-card');
+        if (card) card.classList.toggle('is-open');
+      });
+    });
+    el.querySelectorAll('[data-fsb-lytab]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        bonTab[scope] = btn.getAttribute('data-fsb-lytab');
+        bonRenderPanel(scope);
+      });
+    });
+    el.querySelectorAll('[data-fsb-copy]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var code = btn.getAttribute('data-fsb-copy'), old = btn.textContent;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText){
+            var cp = navigator.clipboard.writeText(code);
+            if (cp && cp.catch) cp.catch(function(){ bonFallbackCopy(code); });
+          } else {
+            bonFallbackCopy(code);
+          }
+        } catch (e) { bonFallbackCopy(code); }
+        btn.textContent = 'Copied';
+        setTimeout(function(){ btn.textContent = old; }, 1400);
+      });
+    });
+    el.querySelectorAll('[data-fsb-apply-code]').forEach(function(btn){ btn.addEventListener('click',function(){ var code=btn.getAttribute('data-fsb-apply-code'); if(code) bonApplyDiscountCode(code,btn); else window.location.href = BON_LY || String(bonSeed.accountUrl || '/account'); }); });
+    el.querySelectorAll('[data-fsb-redeem]').forEach(function(btn){
+      if (btn.getAttribute('data-fsb-apply-code')) return;
+      btn.addEventListener('click', function(){ bonRedeem(btn.getAttribute('data-fsb-redeem'), btn, scope); });
+    });
+  }
+
+  // ============================================================
+  // BON LOYALTY - LIVE DATA SOURCES
+  // ============================================================
+  var BON_LY = String(bonSeed.loyaltyUrl || '').trim();
+
+  // Auto-detect a BON Loyalty widget container that the app renders on the
+  // page (the floating widget / app embeds). Only reads inside that root.
+  function bonWidgetRoot(){
+    var sel = [
+      '.bon-loyalty-widget',
+      '[class*="bon-loyalty" i]',
+      '[class*="bonloyalty" i]',
+      '[id*="bon-loyalty" i]',
+      '[id*="bonloyalty" i]',
+      '[data-app*="bon" i]'
+    ];
+    for (var i = 0; i < sel.length; i++){
+      try {
+        var n = document.querySelector(sel[i]);
+        if (n) return n;
+      } catch(e){}
+    }
+    return null;
+  }
+
+  // Read the live point balance ONLY from a recognised BON widget — never by
+  // scanning arbitrary page text (that previously fabricated wrong numbers).
+  function bonReadWidgetPoints(){
+    if (bonState.points > 0 && bonState.pointsKnown) return true;
+    var root = bonWidgetRoot();
+    if (!root) return false;
+    var hits = root.querySelectorAll('[class*="point" i], [data-points], [data-point-balance], [data-bon-points]');
+    for (var i = 0; i < hits.length; i++){
+      var el = hits[i];
+      var attr = el.getAttribute('data-points') || el.getAttribute('data-point-balance') || el.getAttribute('data-bon-points');
+      var text = (el.textContent || '').trim();
+      var raw = attr || '';
+      if (!raw){
+        var m = text.match(/(\d[\d,.]*)\s*(?:pt|pts|points?)/i) || text.match(/(?:balance|points?)\s*[:=]?\s*(\d[\d,.]*)/i);
+        if (m) raw = m[1];
+      }
+      if (raw){
+        var n = parseFloat(String(raw).replace(/,/g, ''));
+        if (isFinite(n) && n > 0 && n < 10000000){
+          bonState.points = n;
+          bonState.pointsKnown = true;
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  // Redeeming (creating a discount code) is handled by BON itself on its
+  // loyalty page — the theme cannot mint codes without the app's secret API.
+  // So the button opens the BON loyalty page (if configured) instead of
+  // failing silently against a fake endpoint.
+  function bonApplyDiscountCode(code, btn){
+    code = String(code || '').trim();
+    if (!code) return false;
+    /* Keep the code in the clipboard as a safety net, then let Shopify
+       auto-apply it to the cart via the /discount/<code> URL. */
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(code);
+      else bonFallbackCopy(code);
+    } catch(e){ try { bonFallbackCopy(code); } catch(e2){} }
+    if (btn){
+      btn.innerHTML = '<span class="fsb-ly-cta-label">✓</span>';
+      btn.classList.add('is-applied');
+      btn.setAttribute('aria-label','Redeemed');
+      btn.disabled = true;
+    }
+    window.location.href = '/discount/' + encodeURIComponent(code) + '?redirect=/cart';
+    return true;
+  }
+  /* Walks any redeem response shape to the first plausible discount code. */
+  function bonDeepFindCode(o, depth){
+    if (depth > 5 || o == null || typeof o !== 'object') return '';
+    if (Array.isArray(o)){
+      for (var i = 0; i < o.length; i++){ var r = bonDeepFindCode(o[i], depth + 1); if (r) return r; }
+      return '';
+    }
+    var keys = Object.keys(o);
+    for (var k = 0; k < keys.length; k++){
+      if (/^(code|discount_code|coupon_code|voucher_code|reward_code)$/i.test(keys[k])){
+        var v = String(o[keys[k]] || '').trim();
+        if (v.length >= 4 && v.indexOf('{') === -1) return v;
+      }
+    }
+    for (var j = 0; j < keys.length; j++){ var r2 = bonDeepFindCode(o[keys[j]], depth + 1); if (r2) return r2; }
+    return '';
+  }
+
+  function bonRedeem(id, btn, scope){
+    if (!btn || btn.disabled) return;
+    var existingCode = btn.getAttribute('data-fsb-reward-code') || '';
+    if (existingCode && bonApplyDiscountCode(existingCode, btn)) return;
+    var base = String(bonSeed.apiBase || '').trim();
+    var oldHtml = btn.innerHTML;
+    btn.classList.add('is-loading'); btn.setAttribute('aria-busy','true');
+    function bail(){
+      /* Redemption via the proxy not possible → send the customer to the BON
+         loyalty page (Theme Settings > "BON Loyalty page URL"), never the
+         bare account page when a BON page exists. */
+      btn.classList.remove('is-loading'); btn.removeAttribute('aria-busy'); btn.innerHTML = oldHtml;
+      var target = BON_LY || String(bonSeed.accountUrl || '/account');
+      if (target) window.location.href = target;
+    }
+    if (base && id && bonState.cid && bonState.email){
+      /* GAS proxy v14+: redeem through the BON API, get the freshly generated
+         discount code back, then auto-apply it to the cart. */
+      var url = base.replace(/\/+$/, '') + '?action=redeem'
+              + '&shopify_id=' + encodeURIComponent(bonState.cid)
+              + '&email=' + encodeURIComponent(bonState.email)
+              + '&reward_id=' + encodeURIComponent(id);
+      fetch(url, { headers: { 'Accept': 'application/json' }, credentials: 'omit' })
+      .then(function(r){ if (!r.ok) throw new Error('redeem ' + r.status); return r.json(); })
+      .then(function(d){
+        var code = d ? bonDeepFindCode(d) : '';
+        if (!code) throw new Error('No discount code returned');
+        /* Reflect the deducted points immediately (BON returns the new
+           balance in current_point). */
+        if (d && d.current_point !== undefined && d.current_point !== null){
+          bonSetPoints(d.current_point, true);
+          bonWriteCache();
+        }
+        bonApplyDiscountCode(code, btn);
+      })
+      .catch(bail);
+      return;
+    }
+    bail();
+  }
+
+  // ============================================================
+  // BON LOYALTY - REAL API VIA SECURE PROXY
+  // Worker URL is set in the theme setting "bon_api_base".
+  // If not set or the worker is down → metafield/widget fallback.
+  // ============================================================
+  function bonFetchProxy(){
+    var base = String(bonSeed.apiBase || '').trim();
+    if (!base || !bonState.cid || !bonState.email) return Promise.resolve(null);
+    /* Cloudflare Worker: /customer? path — Google Apps Script (/exec):
+       params go straight after '?'. It handles both. */
+    var sep = (base.indexOf('/exec') !== -1) ? '?' : '/customer?';
+    var url = base.replace(/\/+$/, '') + sep + 'shopify_id=' + encodeURIComponent(bonState.cid)
+             + '&email=' + encodeURIComponent(bonState.email);
+    return fetch(url, { headers: { 'Accept': 'application/json' }, credentials: 'omit' })
+      .then(function(r){
+        if (!r.ok) throw new Error('proxy HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function(d){
+        if (!d || d.error) throw new Error((d && d.error) || 'proxy error');
+        return d;
+      })
+      .catch(function(err){
+        console.warn('[FSB] BON proxy unavailable — using metafield/widget data:', err && err.message);
+        return null;
+      });
+  }
+
+  function bonApplyProxy(d){
+    if (!d) return false;
+    if (d.points !== undefined && d.points !== null) bonSetPoints(d.points, true);
+    var pe = bonNum(d.points_earned);
+    if (pe > 0) bonState.pointsEarned = pe;
+    if (d.tier) bonState.tier = bonCleanTier(d.tier);
+    if (d.customer_tier && d.customer_tier.name) bonState.tier = String(d.customer_tier.name);
+    var px = bonNum(bonPick(d, ['points_expiring','expiring_points','points_to_expire','expiring_point']));
+    var pd = bonPick(d, ['points_expiry_date','points_expires_at','points_expire_at','points_expiring_date','point_expired_at']);
+    if (pd && !(px > 0)) bonState.pointsExpiry = { amount: 0, date: String(pd) };
+    if (px > 0 && pd) bonState.pointsExpiry = { amount: px, date: String(pd) };
+    /* DYNAMIC TIERS (v18) — the root `tier` query's tier_details (title +
+       required_value + icon) is the REAL tier program from the BON backend.
+       It always wins: editing or adding a tier in the BON admin updates the
+       drawer automatically (names, $ thresholds, "spend to retain" lines).
+       NOTE: BON returns required_value in CENTS (verified: 10000 = $100),
+       so it is normalised to dollars here. */
+    var apiTiers = bonNormTierRows(d.tier_details || []);
+    if (apiTiers){
+      /* keep the RAW api rows too (pre-normalisation) so the optional
+         ?fsb-tiers-debug=1 overlay can show exactly what BON returned */
+      bonState.tierRowsRaw = Array.isArray(d.tier_details) ? d.tier_details : null;
+      bonState.tierRowsApi = apiTiers.map(function(t){
+        var sv = bonNum(t.spend);
+        /* BON **VIP Tiers** API: required_value is ALREADY in whole store
+           currency (e.g. Toro = $1,000 arrives as 1000) — NOT cents.
+           Display the amount EXACTLY as set in BON: no division anywhere. */
+        return { name: t.name, spend: sv, icon: t.icon };
+      });
+      bonWriteCache();
+    }
+    /* every tier's threshold on this program is a $-spend value
+       (entry_method = money milestone) -> always decide tier by spend */
+    var tierRows = d.tiers || d.vip_tiers || d.loyalty_tiers || d.tier_programs || d.b2b_tiers || [];
+    var fetchedTiers = bonNormTierRows(tierRows);
+    if (fetchedTiers) bonState.tierRows = fetchedTiers;
+    /* customer's live tier straight from BON (title), when provided */
+    var tcd = d.tier_customer_detail;
+    if (tcd && tcd.current_tier){
+      var ctn = bonPick(tcd.current_tier, ['title','name','tier_name'])
+             || (tcd.current_tier.tier_detail ? tcd.current_tier.tier_detail.title : '')
+             || (tcd.current_tier.tier ? tcd.current_tier.tier.title : '');
+      if (ctn) bonState.tier = String(ctn);
+    }
+    var normTiers = bonNormTiers(tierRows);
+    if (normTiers.length) bonState.tiers = normTiers;
+    var historyRows = d.point_histories || d.point_history || d.transactions || d.point_transactions || [];
+    if (Array.isArray(historyRows) && historyRows.length) bonState.history = historyRows;
+    if (Array.isArray(d.rewards) && d.rewards.length) bonState.rewards = d.rewards;
+    if (Array.isArray(d.redeem_functions) && d.redeem_functions.length) bonState.redeem = d.redeem_functions;
+    if (Array.isArray(d.earning_functions) && d.earning_functions.length) bonState.earn = d.earning_functions;
+    if (d.full_name) bonState.memberName = String(d.full_name);
+    else if (d.first_name) bonState.memberName = String(d.first_name);
+    if (d.created_at) {
+      bonState.createdAt = String(d.created_at);
+      bonState.memberSince = String(d.created_at).slice(0, 4);
+    }
+    return true;
+  }
+
+  var bonRefreshPromise = null;
+  function bonRefresh(){
+    if (!bonState.cid) return Promise.resolve();
+    if (bonRefreshPromise) return bonRefreshPromise;
+    bonState.loading = true;
+    bonRefreshPromise = bonFetchProxy()
+      .then(function(proxyData){
+        if (proxyData) {
+          /* Real BON API data — authoritative */
+          bonApplyProxy(proxyData);
+        } else {
+          /* Fallback 1: BON customer metafields (Liquid seed) */
+          if (bonNum(bonSeed.points) > 0) {
+            bonSetPoints(bonSeed.points, true);
+          }
+          /* Fallback 2: live BON widget balance */
+          bonReadWidgetPoints();
+        }
+        bonState.loading = false;
+        bonState.loaded = true;
+        bonWriteCache();
+        updateRewardsBadge();
+        /* When data refreshes, re-render BOTH panels — so the panel that
+           was already open also gets the real data. */
+        ['points', 'rewards'].forEach(function(sc){
+          var el = document.getElementById('fsb-' + sc + '-body-' + sid);
+          if (el && el.innerHTML) bonRenderPanel(sc);
+        });
+      })
+      .catch(function(){
+        bonState.loading = false;
+      })
+      .then(function(){
+        bonRefreshPromise = null;
+      });
+    return bonRefreshPromise;
+  }
+
+  function bonWaitForInitialPoints(timeoutMs){
+    if (!bonState.cid || bonState.pointsKnown) return Promise.resolve();
+    var started = Date.now();
+    return bonRefresh().then(function(){
+      if (bonState.pointsKnown) return;
+      return new Promise(function(resolve){
+        var timer = setInterval(function(){
+          bonReadWidgetPoints();
+          if (bonState.pointsKnown || Date.now() - started >= timeoutMs){
+            clearInterval(timer);
+            resolve();
+          }
+        }, 100);
+      });
+    });
+  }
+
+  function initLoyaltyPanel(scope){
+    bonScrapeTiers();
+    bonReadWidgetPoints();
+    bonRenderPanel(scope);
+    if (!bonState.loaded && bonState.cid){
+      bonRefresh().then(function(){ bonRenderPanel(scope); });
+    }
+  }
+
+  /* ============================================================
+     WIDGET WATCHER — the BON widget appears asynchronously AFTER
+     page load for logged-in customers. We check every 2s (up to 24s):
+     as soon as the widget appears, points are read and the open panel
+     refreshes.
+     ============================================================ */
+  var fsbBonWatchTries = 0;
+  var fsbBonWatch = setInterval(function(){
+    fsbBonWatchTries++;
+    var before = bonNum(bonState.points);
+    var knownBefore = bonState.pointsKnown;
+    var tiersBefore = !!(bonState.tierRows && bonState.tierRows.length);
+    bonReadWidgetPoints();
+    bonScrapeTiers();
+    var tiersChanged = !tiersBefore && !!(bonState.tierRows && bonState.tierRows.length);
+    if ((bonState.pointsKnown && (bonNum(bonState.points) !== before || !knownBefore)) || tiersChanged) {
+      ['points', 'rewards'].forEach(function(sc){
+        var el = document.getElementById('fsb-' + sc + '-body-' + sid);
+        if (el && el.innerHTML) bonRenderPanel(sc);
+      });
+      renderAccountSummary();
+    }
+    if (fsbBonWatchTries >= 60) clearInterval(fsbBonWatch);
+  }, 2000);
+
+  /* BON mounts its widget lazily — watch the DOM and grab the tiers the
+     moment BON's markup/scripts appear (stops once tiers are found). */
+  var fsbScrapeTimer = null;
+  function fsbOnTiersFound(){
+    ['points', 'rewards'].forEach(function(sc){
+      var el = document.getElementById('fsb-' + sc + '-body-' + sid);
+      if (el && el.innerHTML) bonRenderPanel(sc);
+    });
+    renderAccountSummary();
+  }
+  try {
+    var fsbMoStart = Date.now();
+    var fsbMo = new MutationObserver(function(){
+      if (fsbScrapeTimer) return;
+      fsbScrapeTimer = setTimeout(function(){
+        fsbScrapeTimer = null;
+        if (bonState.tierRows && bonState.tierRows.length){ fsbMo.disconnect(); return; }
+        if (Date.now() - fsbMoStart > 120000){ fsbMo.disconnect(); return; }
+        bonScrapeTiers();
+        if (bonState.tierRows && bonState.tierRows.length){ fsbOnTiersFound(); fsbMo.disconnect(); }
+      }, 500);
+    });
+    fsbMo.observe(document.documentElement, { childList: true, subtree: true });
+  } catch(e){}
+
+  /* Console helper for diagnosis: type fsbBonTiersDebug() in DevTools. */
+  window.fsbBonTiersDebug = function(){
+    return { tierRows: bonState.tierRows, resolved: bonTiersResolved(),
+             tierName: bonState.tier, info: bonTierInfo() };
+  };
+
+  // Apply the last real balance immediately, then refresh BON in the
+  // background before either loyalty drawer is opened.
+  bonApplyCache();
+  bonReadWidgetPoints();
+  updateRewardsBadge();
+  var bonInitialLoad = bonState.cid ? bonRefresh() : Promise.resolve();
+
+  // Bind triggers
+  var pointsTrigger = document.getElementById('points-panel-trigger-' + sid);
+  if (pointsTrigger) {
+    var newPointsTrigger = pointsTrigger.cloneNode(true);
+    pointsTrigger.parentNode.replaceChild(newPointsTrigger, pointsTrigger);
+    newPointsTrigger.addEventListener('click', function(e){
+      e.preventDefault(); e.stopPropagation();
+      bonWaitForInitialPoints(2500).then(function(){ openPanel('points'); });
+    });
+  }
+
+  var rewardsTrigger = document.getElementById('rewards-panel-trigger-' + sid);
+  if (rewardsTrigger) {
+    var newRewardsTrigger = rewardsTrigger.cloneNode(true);
+    rewardsTrigger.parentNode.replaceChild(newRewardsTrigger, rewardsTrigger);
+    newRewardsTrigger.addEventListener('click', function(e){
+      e.preventDefault(); e.stopPropagation();
+      bonWaitForInitialPoints(2500).then(function(){ openPanel('rewards'); });
+    });
+  }
+
+
+  /* Account drawer: desktop and mobile use the same tabbed membership UI. */
+  var accountTrigger=document.getElementById('account-panel-trigger-'+sid);
+  var accountPanel=document.getElementById('fsb-panel-account-'+sid);
+  function renderAccountSummary(){
+    if(!accountPanel) return;
+    var sum=document.getElementById('fsb-account-summary-'+sid);
+    if(!sum) return;
+    /* Same header as the Points and Rewards drawers:
+       tier image card -> POINTS EARNED -> big number -> expiry line ->
+       thin gold progress bar -> spend-to-retain line. */
+    sum.innerHTML = bonTierCard() + bonPointsCard();
+  }
+  function accountTab(name){
+    if(!accountPanel) return;
+    accountPanel.querySelectorAll('[data-account-tab]').forEach(function(b){b.classList.toggle('is-active',b.getAttribute('data-account-tab')===name);});
+    accountPanel.querySelectorAll('[data-account-pane]').forEach(function(p){p.classList.toggle('is-active',p.getAttribute('data-account-pane')===name);});
+    if(name==='history'){
+      var h=document.getElementById('fsb-account-history-'+sid); if(h){h.innerHTML=bonRenderHistory(); bonBindPanel(h,'points');}
+    }
+    if(name==='rewards'){
+      var r=document.getElementById('fsb-account-rewards-'+sid); if(r){
+        r.innerHTML=bonTabs('rewards')+bonRewardsInner(); bonBindPanel(r,'rewards');
+      }
+    }
+  }
+  /* ---------- Order details pair drawer ---------- */
+  function fsbOdPanel(){ return document.getElementById('fsb-panel-orderdetail-' + sid); }
+  /* Gold border on the clicked order card while its detail is open
+     (visible only when the od-pair is open — CSS gates on the overlay class). */
+  function fsbOdSelect(hostPanel, orderId){
+    overlay.querySelectorAll('.fsb-od-selected').forEach(function(el){ el.classList.remove('fsb-od-selected'); });
+    if (!hostPanel) return;
+    var trigEl = hostPanel.querySelector('[data-fsb-od="' + String(orderId).replace(/"/g, '') + '"]');
+    var card = trigEl ? (trigEl.closest('.fsb-list-card') || trigEl) : null;
+    if (card) card.classList.add('fsb-od-selected');
+  }
+  function fsbOdClearSelect(){
+    overlay.querySelectorAll('.fsb-od-selected').forEach(function(el){ el.classList.remove('fsb-od-selected'); });
+  }
+  /* ---------- MOBILE: order details INSIDE the membership drawer ----------
+     Header, summary card and tabs stay exactly as they are; the order
+     detail replaces the pane content and "Back" restores the list. */
+  var odInlineEl = null;
+  function fsbOdInlineWrap(){ return document.getElementById('fsb-account-od-' + sid); }
+  function fsbOdInlineOpen(orderId){
+    var panel = accountPanel, slot = document.getElementById('fsb-account-od-slot-' + sid),
+        wrap = fsbOdInlineWrap(), odPanel = fsbOdPanel();
+    if (!panel || !slot || !wrap || !odPanel) return false;
+    var el = odPanel.querySelector('.fsb-od[data-order-id="' + String(orderId).replace(/"/g, '') + '"]');
+    if (!el) return false;
+    odInlineEl = el;
+    el.hidden = false;
+    slot.appendChild(el);
+    wrap.hidden = false;
+    panel.classList.add('fsb-account-od-open');
+    var body = panel.querySelector('.fsb-account-body') || panel.querySelector('.fsb-panel-body');
+    if (body) body.scrollTop = 0;
+    return true;
+  }
+  function fsbOdInlineClose(){
+    if (!odInlineEl){
+      var wrap0 = fsbOdInlineWrap();
+      if (wrap0) wrap0.hidden = true;
+      if (accountPanel) accountPanel.classList.remove('fsb-account-od-open');
+      return;
+    }
+    var odPanel = fsbOdPanel();
+    var body = odPanel ? odPanel.querySelector('.fsb-od-body') : null;
+    if (body){ odInlineEl.hidden = true; body.appendChild(odInlineEl); }
+    odInlineEl = null;
+    var wrap = fsbOdInlineWrap();
+    if (wrap) wrap.hidden = true;
+    if (accountPanel) accountPanel.classList.remove('fsb-account-od-open');
+  }
+  function fsbOdIsMobile(){
+    return !!(window.matchMedia && window.matchMedia('(max-width: 767px)').matches);
+  }
+  function openOrderDetail(orderId, fromPanel){
+    var odPanel = fsbOdPanel();
+    if (!odPanel) return;
+    /* reset any stale mobile-inline state first (e.g. drawer was closed
+       with X while the inline detail was open) */
+    fsbOdInlineClose();
+    var hostPanel = document.getElementById('fsb-panel-' + (fromPanel || 'orders') + '-' + sid);
+    /* MOBILE + membership drawer: detail opens INSIDE the same drawer —
+     no separate stacked drawer. */
+    if (fromPanel === 'account' && fsbOdIsMobile()){
+      if (fsbOdInlineOpen(orderId)){
+        closeCart();
+        sectionRoot.classList.remove('fsb-region-panel-open');
+        allPanels().forEach(function(panel){ if (panel !== hostPanel) panel.classList.remove('active'); });
+        if (hostPanel) hostPanel.classList.add('active');
+        overlay.classList.remove('fsb-address-pair-open');
+        overlay.classList.remove('fsb-address-edit-pair-open');
+        overlay.classList.remove('fsb-od-pair-open');
+        syncBodyState();
+        setActiveIcon('account');
+      }
+      return;
+    }
+    odPanel.querySelectorAll('.fsb-od').forEach(function(el){
+      el.hidden = el.getAttribute('data-order-id') !== String(orderId);
+    });
+    odPanel.setAttribute('data-od-parent', fromPanel || 'orders');
+    fsbOdSelect(hostPanel, orderId);
+    closeCart();
+    sectionRoot.classList.remove('fsb-region-panel-open');
+    allPanels().forEach(function(panel){
+      if (panel !== odPanel && panel !== hostPanel) panel.classList.remove('active');
+    });
+    if (hostPanel) hostPanel.classList.add('active');
+    odPanel.classList.add('active');
+    overlay.classList.remove('fsb-address-pair-open');
+    overlay.classList.remove('fsb-address-edit-pair-open');
+    overlay.classList.remove('fsb-od-pair-open');
+    overlay.classList.add('fsb-od-pair-open');
+    var body = odPanel.querySelector('.fsb-panel-body');
+    if (body) body.scrollTop = 0;
+    syncBodyState();
+    setActiveIcon(fromPanel === 'account' ? 'account' : 'orders');
+  }
+  function closeOrderDetail(){
+    var odPanel = fsbOdPanel();
+    if (!odPanel) return;
+    odPanel.classList.remove('active');
+    overlay.classList.remove('fsb-od-pair-open');
+    fsbOdClearSelect();
+    syncBodyState();
+  }
+  overlay.addEventListener('click', function(e){
+    var trig = e.target.closest('[data-fsb-od]');
+    if (trig) {
+      e.preventDefault();
+      var inAccount = !!trig.closest('.fsb-account-panel');
+      openOrderDetail(trig.getAttribute('data-fsb-od'), inAccount ? 'account' : 'orders');
+      return;
+    }
+    if (e.target.closest('[data-fsb-od-back]')) {
+      e.preventDefault();
+      closeOrderDetail();
+      return;
+    }
+    if (e.target.closest('[data-fsb-account-od-back]')) {
+      e.preventDefault();
+      fsbOdInlineClose();
+      accountTab('orders');
+    }
+  });
+  function openAccount(){ fsbOdInlineClose(); openPanel('account'); renderAccountSummary(); accountTab('profile'); if(bonState.cid&&!bonState.loaded) bonRefresh().then(renderAccountSummary); }
+  if(accountTrigger){var ac=accountTrigger.cloneNode(true);accountTrigger.parentNode.replaceChild(ac,accountTrigger);ac.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();openAccount();});}
+  if(accountPanel){accountPanel.addEventListener('click',function(e){
+    var tab=e.target.closest('[data-account-tab]');if(tab){e.preventDefault();fsbOdInlineClose();accountTab(tab.getAttribute('data-account-tab'));}
+    /* Rewards sub-tabs (Available / Used / Expired) inside the membership drawer */
+    var lyt=e.target.closest('[data-fsb-lytab]');if(lyt){e.preventDefault();bonTab.rewards=lyt.getAttribute('data-fsb-lytab');accountTab('rewards');}
+    var htab=e.target.closest('.fsb-history-tabs button');if(htab){var hs=htab.parentNode;hs.querySelectorAll('button').forEach(function(b){b.classList.remove('is-active');});htab.classList.add('is-active');}
+    var trm=e.target.closest('[data-fsb-terms]');if(trm){var tc=trm.closest('.fsb-rw-card');if(tc)tc.classList.toggle('is-open');}
+    var region=e.target.closest('[data-fsb-open-region]');if(region){e.preventDefault();closeAllPanels();openPanel('region');}
+    var add=e.target.closest('[data-fsb-account-add-address]');if(add){e.preventDefault();openAddressPair();}
+    var lgo=e.target.closest('[data-fsb-logout]');if(lgo){e.preventDefault();window.location.href='{{ routes.account_logout_url }}';}
+  });}
+  // Expose for debugging
+  window.fsbBonState = bonState;
+  window.fsbBonFindPoints = bonFindPoints;
+  window.fsbBonRefresh = bonRefresh;
+  window.fsbInitLoyaltyPanel = initLoyaltyPanel;
+
+  var menuToggle = sectionRoot.querySelector('[data-fsb-more-toggle]');
+  var menuTitle = document.getElementById('fsb-menu-title-' + sid);
+  var menuBack = document.getElementById('fsb-menu-back-' + sid);
+  var desktopMenuTitle = {{ section.settings.menu_list.title | default: 'Menu' | json }};
+  var mobileMenuTitle = {{ section.settings.mobile_menu_list.title | default: section.settings.menu_list.title | default: 'Menu' | json }};
+  var defaultMenuTitle = desktopMenuTitle || 'Menu';
+  function getCurrentMenuTitle(){
+    if (window.matchMedia && window.matchMedia('(max-width: 767px)').matches) {
+      return mobileMenuTitle || desktopMenuTitle || 'Menu';
+    }
+    return desktopMenuTitle || 'Menu';
+  }
+  if (menuToggle) {
+    var newMenuToggle = menuToggle.cloneNode(true);
+    menuToggle.parentNode.replaceChild(newMenuToggle, menuToggle);
+    newMenuToggle.addEventListener('click', function(e){
+      e.preventDefault();
+      defaultMenuTitle = getCurrentMenuTitle();
+      if (menuTitle) menuTitle.textContent = defaultMenuTitle;
+      if (menuBack) menuBack.style.display = 'none';
+      overlay.querySelectorAll('.fsb-menu-sub').forEach(function(sub){
+        sub.classList.remove('active');
+      });
+      overlay.querySelectorAll('.fsb-menu-root > .fsb-menu-item').forEach(function(li){ li.style.display = ''; });
+      openPanel('menu');
+    });
+  }
+  overlay.addEventListener('click', function(e){
+    var parentBtn = e.target.closest('.fsb-menu-parent');
+    if (!parentBtn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    
+    var li = parentBtn.closest('.fsb-menu-item');
+    if (!li) return;
+    
+    var targetId = parentBtn.getAttribute('data-target');
+    var sub = null;
+    if (targetId) {
+      sub = document.getElementById(targetId);
+    }
+    if (!sub) {
+      sub = li.querySelector(':scope > .fsb-menu-sub');
+    }
+    if (!sub) return;
+    
+    var root = li.closest('.fsb-menu-root');
+    if (root) {
+      root.querySelectorAll(':scope > .fsb-menu-item').forEach(function(item){ 
+        item.style.display = 'block'; 
+      });
+    }
+    
+    sub.classList.add('active');
+    if (menuTitle) menuTitle.textContent = li.getAttribute('data-title') || defaultMenuTitle;
+    if (menuBack) menuBack.style.display = 'inline-flex';
+  });
+  if (menuBack) {
+    menuBack.addEventListener('click', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      overlay.querySelectorAll('.fsb-menu-sub').forEach(function(sub){
+        sub.classList.remove('active');
+      });
+      overlay.querySelectorAll('.fsb-menu-root > .fsb-menu-item').forEach(function(li){ 
+        li.style.display = ''; 
+      });
+      defaultMenuTitle = getCurrentMenuTitle();
+      if (menuTitle) menuTitle.textContent = defaultMenuTitle;
+      menuBack.style.display = 'block';
+    });
+  }
+  var regionInitDone = false;
+  var pendingCountry = '{{ localization.country.iso_code }}';
+  var pendingLang    = '{{ localization.language.iso_code }}';
+  function initRegionPanel(){
+    if (regionInitDone) return;
+    regionInitDone = true;
+    var regionList = document.getElementById('fsb-region-list-' + sid);
+    var langList   = document.getElementById('fsb-lang-list-' + sid);
+    if (regionList) {
+      regionList.addEventListener('click', function(e){
+        var btn = e.target.closest('.fsb-region-option');
+        if (!btn) return;
+        pendingCountry = btn.getAttribute('data-country');
+        regionList.querySelectorAll('.fsb-region-option').forEach(function(b){
+          b.classList.toggle('is-current', b === btn);
+        });
+        var sel = document.getElementById('fsb-country-select-' + sid);
+        if (sel) sel.value = pendingCountry;
+      });
+    }
+    if (langList) {
+      langList.addEventListener('click', function(e){
+        var btn = e.target.closest('.fsb-lang-option');
+        if (!btn) return;
+        pendingLang = btn.getAttribute('data-lang');
+        langList.querySelectorAll('.fsb-lang-option').forEach(function(b){
+          b.classList.toggle('is-current', b === btn);
+        });
+        var sel = document.getElementById('fsb-lang-select-' + sid);
+        if (sel) sel.value = pendingLang;
+      });
+    }
+    tryPopulateFromLangify(regionList, langList);
+    var applyBtn = document.getElementById('fsb-rl-apply-' + sid);
+    if (applyBtn) {
+      applyBtn.addEventListener('click', function(){
+        applyRegionLanguage();
+      });
+    }
+  }
+  function forceNativeSubmit(form){
+    if (!form) return false;
+    try {
+      HTMLFormElement.prototype.submit.call(form);
+      return true;
+    } catch (err) {
+      try { form.submit(); return true; } catch (err2) { return false; }
+    }
+  }
+  /* Push the chosen region/language to Shopify Admin (customer metafields
+     custom.region / custom.language) via the same GAS proxy used for the
+     marketing toggle. Fire-and-forget with keepalive so it still completes
+     after the page navigates away for the localization form submit. */
+  function fsbSyncRegionLangPref(countryChanged, langChanged){
+    var email = String(bonSeed.customerEmail || '').trim();
+    if (!email) return;
+    var base = String(bonSeed.apiBase || '').trim();
+    if (!base) return;
+    var args = 'action=pref_set'
+      + '&shopify_id=' + encodeURIComponent(bonSeed.customerId || '')
+      + '&email=' + encodeURIComponent(email);
+    if (langChanged)    args += '&language=' + encodeURIComponent(pendingLang || '');
+    if (countryChanged) args += '&region=' + encodeURIComponent(pendingCountry || '');
+    var url = base.replace(/\/+$/, '') + '?' + args;
+    try {
+      fetch(url, { headers: { 'Accept': 'application/json' }, credentials: 'omit', keepalive: true }).catch(function(){});
+    } catch (e) {}
+  }
+  function applyRegionLanguage(){
+    var applyBtn = document.getElementById('fsb-rl-apply-' + sid);
+    if (applyBtn){ applyBtn.disabled = true; applyBtn.textContent = 'Applying…'; }
+    var countrySel  = document.getElementById('fsb-country-select-' + sid);
+    var langSel     = document.getElementById('fsb-lang-select-' + sid);
+    var countryForm = countrySel ? countrySel.closest('form') : null;
+    var langForm    = langSel ? langSel.closest('form') : null;
+    var currentCountry = '{{ localization.country.iso_code }}';
+    var currentLang    = '{{ localization.language.iso_code }}';
+    var countryChanged = pendingCountry && pendingCountry !== currentCountry;
+    var langChanged    = pendingLang && pendingLang !== currentLang;
+    if (!countryChanged && !langChanged) {
+      if (applyBtn){ applyBtn.disabled = false; applyBtn.textContent = 'Apply Changes'; }
+      closeAllPanels();
+      return;
+    }
+    if (countryChanged && langChanged) {
+      try { sessionStorage.setItem('fsb_pending_lang_' + sid, pendingLang); } catch(e) {}
+    }
+    fsbSyncRegionLangPref(countryChanged, langChanged);
+    var submitted = false;
+    if (countryChanged && countryForm && countrySel) {
+      countrySel.value = pendingCountry;
+      submitted = forceNativeSubmit(countryForm);
+      if (submitted) return;
+    }
+    if (!submitted && langChanged && langForm && langSel) {
+      langSel.value = pendingLang;
+      submitted = forceNativeSubmit(langForm);
+      if (submitted) return;
+    }
+    if ((langChanged || countryChanged) && window.__fsbLangifyMap) {
+      var target = window.__fsbLangifyMap[pendingLang] || window.__fsbLangifyMap[pendingCountry];
+      if (target) { window.location.href = target; return; }
+    }
+    if (applyBtn){ applyBtn.disabled = false; applyBtn.textContent = 'Apply Changes'; }
+    console.error('FSB region/language: could not submit localization form.', {
+      countryForm: countryForm, langForm: langForm, pendingCountry: pendingCountry, pendingLang: pendingLang
+    });
+  }
+  (function resumePendingLanguageChange(){
+    try {
+      var key = 'fsb_pending_lang_' + sid;
+      var savedLang = sessionStorage.getItem(key);
+      if (savedLang) {
+        sessionStorage.removeItem(key);
+        var currentLangNow = '{{ localization.language.iso_code }}';
+        if (savedLang !== currentLangNow) {
+          var langSel  = document.getElementById('fsb-lang-select-' + sid);
+          var langForm = langSel ? langSel.closest('form') : null;
+          if (langForm && langSel) {
+            langSel.value = savedLang;
+            forceNativeSubmit(langForm);
+          }
+        }
+      }
+    } catch(e) {}
+  })();
+  function tryPopulateFromLangify(regionList, langList){
+    var langSwitcher = document.querySelector(
+      '.langify-language-switcher, .langify--language-switcher, [class*="langify"] [data-language], .lgf-language, #langify-language, .langify_language_switcher'
+    );
+    if (!langSwitcher) return;
+    var links = langSwitcher.querySelectorAll('a[href]');
+    if (!links.length) return;
+    window.__fsbLangifyMap = window.__fsbLangifyMap || {};
+    var langEmpty = document.getElementById('fsb-lang-empty-' + sid);
+    if (langList && (langEmpty || langList.querySelectorAll('.fsb-lang-option').length === 0)) {
+      langList.innerHTML = '';
+      links.forEach(function(a){
+        var code = (a.getAttribute('data-language') || a.getAttribute('hreflang') || a.getAttribute('data-lang') || '').toLowerCase();
+        var label = (a.textContent || '').trim();
+        var href = a.getAttribute('href');
+        if (code) window.__fsbLangifyMap[code] = href;
+        var li = document.createElement('li');
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'fsb-rl-item fsb-lang-option';
+        if (a.classList.contains('active') || a.getAttribute('aria-current')) {
+          btn.classList.add('is-current');
+        }
+        btn.setAttribute('data-lang', code);
+        btn.setAttribute('data-href', href || '#');
+        btn.innerHTML = '<span class="fsb-rl-text">' + label + '</span>' +
+          '<span class="fsb-rl-check"><svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
+        btn.addEventListener('click', function(){
+          langList.querySelectorAll('.fsb-lang-option').forEach(function(b){ b.classList.remove('is-current'); });
+          btn.classList.add('is-current');
+          pendingLang = code;
+        });
+        li.appendChild(btn);
+        langList.appendChild(li);
+      });
+    }
+  }
+  (function cleanupLegacyRegion(){
+    var legacyPopup = document.getElementById('flag-popup-overlay-' + sid);
+    if (legacyPopup) legacyPopup.style.display = 'none';
+  })();
+  window.fsbClosePanels = closeAllPanels;
+  window.fsbUpdateCartCount = updateCartCount;
+})();
+</script>

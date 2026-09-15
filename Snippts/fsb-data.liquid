@@ -1,0 +1,129 @@
+<!-- Snippet: fsb-data (BON Loyalty seed JSON + VIP tier config) — rendered by sections/floating-sidebar.liquid -->
+<script type="application/json" id="fsb-bon-data-{{ section.id }}">
+{
+  "customerId": {% if customer %}{{ customer.id | json }}{% else %}null{% endif %},
+  "customerName": {% if customer %}{{ customer.name | default: customer.first_name | default: '' | json }}{% else %}""{% endif %},
+  "customerEmail": {% if customer %}{{ customer.email | json }}{% else %}""{% endif %},
+  "klaviyoPublicKey": {{ section.settings.klaviyo_public_key | default: "" | json }},
+  "memberSince": {% if customer %}{{ customer.created_at | date: "%Y" | json }}{% else %}""{% endif %},
+  "tags": {% if customer %}{{ customer.tags | json }}{% else %}[]{% endif %},
+  "points": {% if customer %}
+    {% assign bon_points = 0 %}
+    {% assign meta_fields = customer.metafields %}
+    
+    {% if meta_fields.bon_loyalty.point_balance %}
+      {% assign bon_points = meta_fields.bon_loyalty.point_balance %}
+    {% elsif meta_fields.bon_loyalty.points_balance %}
+      {% assign bon_points = meta_fields.bon_loyalty.points_balance %}
+    {% elsif meta_fields.bon_loyalty.points %}
+      {% assign bon_points = meta_fields.bon_loyalty.points %}
+    {% elsif meta_fields.bon_loyalty.current_point %}
+      {% assign bon_points = meta_fields.bon_loyalty.current_point %}
+    {% elsif meta_fields.bon.point %}
+      {% assign bon_points = meta_fields.bon.point %}
+    {% elsif meta_fields.bon.point_balance %}
+      {% assign bon_points = meta_fields.bon.point_balance %}
+    {% elsif meta_fields.bon.points_balance %}
+      {% assign bon_points = meta_fields.bon.points_balance %}
+    {% elsif meta_fields.bon.points %}
+      {% assign bon_points = meta_fields.bon.points %}
+    {% elsif meta_fields.loyalty.point_balance %}
+      {% assign bon_points = meta_fields.loyalty.point_balance %}
+    {% elsif meta_fields.custom.bon_loyalty_points %}
+      {% assign bon_points = meta_fields.custom.bon_loyalty_points %}
+    {% elsif meta_fields.custom.bon_points %}
+      {% assign bon_points = meta_fields.custom.bon_points %}
+    {% elsif meta_fields.custom.loyalty_point_balance %}
+      {% assign bon_points = meta_fields.custom.loyalty_point_balance %}
+    {% elsif meta_fields.custom.loyalty_points %}
+      {% assign bon_points = meta_fields.custom.loyalty_points %}
+    {% elsif meta_fields.custom.point_balance %}
+      {% assign bon_points = meta_fields.custom.point_balance %}
+    {% elsif meta_fields.custom.points %}
+      {% assign bon_points = meta_fields.custom.points %}
+    {% endif %}
+    
+    {{ bon_points.value | default: bon_points | json }}
+  {% else %}0{% endif %},
+  "pointsEarned": {% if customer %}
+    {% assign bon_earned = 0 %}
+    {% if customer.metafields.bon_loyalty.points_earned %}
+      {% assign bon_earned = customer.metafields.bon_loyalty.points_earned %}
+    {% elsif customer.metafields.bon_loyalty.point_earned %}
+      {% assign bon_earned = customer.metafields.bon_loyalty.point_earned %}
+    {% elsif customer.metafields.bon.points_earned %}
+      {% assign bon_earned = customer.metafields.bon.points_earned %}
+    {% elsif customer.metafields.loyalty.points_earned %}
+      {% assign bon_earned = customer.metafields.loyalty.points_earned %}
+    {% endif %}
+    {{ bon_earned.value | default: bon_earned | json }}
+  {% else %}0{% endif %},
+  "rewardsCount": {% if customer %}
+    {% assign bon_rewards = 0 %}
+    {% if customer.metafields.bon_loyalty.rewards_count %}
+      {% assign bon_rewards = customer.metafields.bon_loyalty.rewards_count %}
+    {% elsif customer.metafields.bon.rewards_count %}
+      {% assign bon_rewards = customer.metafields.bon.rewards_count %}
+    {% elsif customer.metafields.loyalty.rewards_count %}
+      {% assign bon_rewards = customer.metafields.loyalty.rewards_count %}
+    {% endif %}
+    {{ bon_rewards.value | default: bon_rewards | json }}
+  {% else %}0{% endif %},
+  "tier": {% if customer %}
+    {% assign bon_tier = '' %}
+    {% if customer.metafields.bon_loyalty.tier %}
+      {% assign bon_tier = customer.metafields.bon_loyalty.tier %}
+    {% elsif customer.metafields.bon_loyalty.tier_name %}
+      {% assign bon_tier = customer.metafields.bon_loyalty.tier_name %}
+    {% elsif customer.metafields.bon_loyalty.vip_tier %}
+      {% assign bon_tier = customer.metafields.bon_loyalty.vip_tier %}
+    {% elsif customer.metafields.bon.vip_tier %}
+      {% assign bon_tier = customer.metafields.bon.vip_tier %}
+    {% elsif customer.metafields.bon.tier %}
+      {% assign bon_tier = customer.metafields.bon.tier %}
+    {% elsif customer.metafields.bon.tier_name %}
+      {% assign bon_tier = customer.metafields.bon.tier_name %}
+    {% elsif customer.metafields.bon.member_status %}
+      {% assign bon_tier = customer.metafields.bon.member_status %}
+    {% elsif customer.metafields.loyalty.tier %}
+      {% assign bon_tier = customer.metafields.loyalty.tier %}
+    {% endif %}
+    {{ bon_tier.value | default: bon_tier | json }}
+  {% else %}""{% endif %},
+  "ordersCount": {% if customer %}{{ customer.orders_count | default: 0 | json }}{% else %}0{% endif %},
+  "orders": {% if customer %}[{% for o in customer.orders limit: 12 %}{"name": {{ o.name | json }}, "date": {{ o.created_at | date: "%Y-%m-%d" | json }}, "total": {{ o.total_price | divided_by: 100.0 | json }}}{% unless forloop.last %},{% endunless %}{% endfor %}]{% else %}[]{% endif %},
+  "shopName": {{ shop.name | json }},
+  "shopDomain": {{ shop.permanent_domain | json }},
+  "moneyFormat": {{ shop.money_format | strip_html | json }},
+  "loginUrl": {{ routes.account_login_url | json }},
+  "accountUrl": {{ routes.account_url | json }},
+  "totalSpent": {% if customer %}{{ customer.total_spent | divided_by: 100.0 | json }}{% else %}0{% endif %},
+  {% comment %}
+    TIER CARD IMAGES — fully dynamic:
+    The tier LIST now comes live from the BON backend (tier program:
+    names, spend thresholds, icons). For each tier the theme tries to load
+    a card image from Content > Files using the tier's name — spaces become
+    underscores or dashes, ANY casing works (.png/.jpg both tried):
+      "Toro" -> Toro.png / Toro_Member.png / toro_member.png / Toro-Member.png …
+    tiersFallback below is ONLY an offline emergency snapshot (used when the
+    BON API is unreachable) — it mirrors the store's **VIP Tiers** program
+    (Robusto $0 / Toro $1,000 / Churchill $6,000). Normal operation never
+    needs edits here.
+  {% endcomment %}
+  "tiersFallback": [
+    { "name": "Robusto",   "spend": 0,    "icon": {{ 'Robusto_Member.png' | file_url | json }} },
+    { "name": "Toro",      "spend": 1000, "icon": {{ 'Toro_Member.png' | file_url | json }} },
+    { "name": "Churchill", "spend": 6000, "icon": {{ 'Churchill_Member.png' | file_url | json }} }
+  ],
+  {% comment %} filesBase — Shopify Files CDN base URL, derived from the
+     store's own CDN namespace (assets and uploaded Files share the same
+     /s/files/1/<id>/ path). No probing, no conditionals, no dependency on
+     any specific file. Tier images then resolve PURELY by tier name from
+     Content > Files: "Robusto" -> Robusto.png / Robusto_Member.png. {% endcomment %}
+  {% assign fsb_asset_probe = 'fsb-cdn-probe.png' | asset_url %}
+  {% assign fsb_files_base = fsb_asset_probe | split: '/t/' | first | append: '/files/' %}
+  "filesBase": {{ fsb_files_base | json }},
+  "apiBase": {{ section.settings.bon_api_base | default: '' | json }},
+  "loyaltyUrl": {{ section.settings.bon_loyalty_page | default: '' | json }}
+}
+</script>

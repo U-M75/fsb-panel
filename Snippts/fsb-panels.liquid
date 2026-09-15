@@ -1,0 +1,664 @@
+<!-- Snippet: fsb-panels (side panels / drawers) — rendered by sections/floating-sidebar.liquid -->
+<!-- ============================================================ -->
+<!-- Side Panels: Orders / Address / Menu / Region / Notifications -->
+<!-- ============================================================ -->
+<div class="fsb-panel-overlay" id="fsb-panel-overlay-{{ section.id }}">
+  <!-- Account / Membership Panel -->
+  <div class="fsb-side-panel fsb-account-panel" id="fsb-panel-account-{{ section.id }}" data-fsb-panel="account">
+    <div class="fsb-panel-head"><h3> My Membership</h3><button type="button" class="fsb-panel-close" data-fsb-close aria-label="Close"><svg class="fsb-close-icon-desktop" width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><svg class="fsb-close-icon-mobile" width="21" height="13" viewBox="0 0 21 13" fill="none"><path d="M1 2l9.5 9L20 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+    <div class="fsb-panel-body fsb-account-body">
+      {% if customer %}
+      <div class="fsb-account-summary" id="fsb-account-summary-{{ section.id }}"></div>
+      <div class="fsb-account-tabs" role="tablist"><button type="button" class="fsb-account-tab is-active" data-account-tab="profile">Profile</button><button type="button" class="fsb-account-tab" data-account-tab="orders">Orders</button><button type="button" class="fsb-account-tab" data-account-tab="history">Points History</button><button type="button" class="fsb-account-tab" data-account-tab="rewards">Rewards</button><button type="button" class="fsb-account-tab" data-account-tab="address">Address Book</button></div>
+      <section class="fsb-account-pane is-active" data-account-pane="profile"><h4>PROFILE DETAILS</h4><div class="fsb-profile-row"><b>Name</b><span>{{ customer.name | default: customer.first_name | default: '—' }}</span></div><div class="fsb-profile-row"><b>DOB</b><span>{{ customer.metafields.custom.date_of_birth.value | default: customer.metafields.custom.dob.value | default: '—' }}</span></div><div class="fsb-profile-row"><b>Email</b><span>{{ customer.email | default: '—' }}</span></div><div class="fsb-profile-row"><b>Mobile</b><span>{{ customer.phone | default: '—' }}</span></div><div class="fsb-profile-row"><b>Region</b><button type="button" class="fsb-profile-action" data-fsb-open-region>{{ localization.country.name | default: '—' }}</button></div><div class="fsb-profile-row"><b>Language</b><button type="button" class="fsb-profile-action" data-fsb-open-region>{{ localization.language.endonym_name | default: localization.language.name | default: 'English' }}</button></div><div class="fsb-profile-row fsb-marketing-row"><b>Subscribe to exclusive offers</b><div class="fsb-marketing-ctl"><label class="fsb-switch fsb-switch-big"><input type="checkbox" id="fsb-marketing-optin-{{ section.id }}" {% if customer.accepts_marketing %}checked{% endif %}><i></i></label><span class="fsb-mkt-state" id="fsb-mkt-state-{{ section.id }}">{% if customer.accepts_marketing %}On{% else %}Off{% endif %}</span></div></div><p class="fsb-mkt-status" id="fsb-mkt-status-{{ section.id }}"></p><button type="button" class="fsb-logout-btn" id="fsb-logout-btn-{{ section.id }}" data-fsb-logout>Log out</button></section>
+      <section class="fsb-account-pane" data-account-pane="orders"><ul class="fsb-list">{% if customer.orders.size > 0 %}{% for order in customer.orders limit: 12 %}<li class="fsb-list-card"><div class="fsb-list-card-top"><strong>{{ order.name }}</strong><span class="fsb-badge fsb-badge-{{ order.fulfillment_status | default: 'unfulfilled' | handleize }}">{{ order.fulfillment_status | default: 'Unfulfilled' | replace: '_', ' ' | capitalize }}</span></div><div class="fsb-list-card-meta">{{ order.created_at | date: "%d %b %Y" }} · {{ order.line_items.size }} item{% if order.line_items.size != 1 %}s{% endif %} · {{ order.total_price | money }}</div><button type="button" class="fsb-list-card-link fsb-od-trigger" data-fsb-od="{{ order.id }}">View details ›</button></li>{% endfor %}{% else %}<li class="fsb-panel-empty">You haven't placed any orders yet.</li>{% endif %}</ul></section>
+      <section class="fsb-account-pane" data-account-pane="history"><div id="fsb-account-history-{{ section.id }}"></div></section><section class="fsb-account-pane" data-account-pane="rewards"><div id="fsb-account-rewards-{{ section.id }}"></div></section>
+      <section class="fsb-account-pane" data-account-pane="address"><ul class="fsb-list">{% for address in customer.addresses %}<li class="fsb-list-card"><div class="fsb-list-card-top"><strong>Address</strong>{% if address.id == customer.default_address.id %}<span class="fsb-badge fsb-badge-primary">Primary</span>{% endif %}<button type="button" class="fsb-edit-link fsb-edit-address-trigger" data-fsb-edit-address data-address-id="{{ address.id }}" aria-label="Edit address">✎</button></div><div class="fsb-list-card-meta">{{ address.address1 }}{% if address.address2 != blank %}, {{ address.address2 }}{% endif %}
+{{ address.city }}{% if address.province_code %}, {{ address.province_code }}{% endif %} {{ address.zip }}
+{{ address.country }}</div></li>{% else %}<li class="fsb-panel-empty">No saved addresses yet.</li>{% endfor %}</ul><button type="button" class="fsb-add-new" data-fsb-account-add-address>+ Add new address</button></section>
+      <!-- Mobile-only: order details open INSIDE this drawer (header, summary
+           card and tabs stay; the order detail replaces the pane content. -->
+      <div class="fsb-account-od" id="fsb-account-od-{{ section.id }}" hidden>
+        <button type="button" class="fsb-account-od-back" data-fsb-account-od-back aria-label="Back"><svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M12.5 4L6 10l6.5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <div class="fsb-account-od-slot" id="fsb-account-od-slot-{{ section.id }}"></div>
+      </div>
+      {% else %}<p class="fsb-panel-empty">Please <a href="{{ routes.account_login_url }}">log in</a> to view your membership.</p>{% endif %}
+    </div>
+  </div>
+  <!-- Points Panel (BON Loyalty - fully dynamic) -->
+  <div class="fsb-side-panel" id="fsb-panel-points-{{ section.id }}" data-fsb-panel="points">
+    <div class="fsb-panel-head">
+      <h3>{{ section.settings.points_text | default: 'Points' }}</h3>
+      <button type="button" class="fsb-panel-close" data-fsb-close aria-label="Close">
+        <svg class="fsb-close-icon-desktop" width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="21" height="13" viewBox="0 0 21 13" focusable="false" role="presentation" data-garden-id="buttons.icon" data-garden-version="8.76.9" class="StyledIcon-sc-19meqgg-0 cxMMcO fsb-close-icon-mobile"><path fill-rule="evenodd" clip-rule="evenodd" fill="currentColor" d="M20.1005 2.7169L10.9931 11.8244C10.4724 12.3451 9.62815 12.3451 9.10745 11.8244L-8.00829e-06 2.7169L1.88561 0.831278L10.0503 8.99593L18.2149 0.831278L20.1005 2.7169Z"/></svg>
+      </button>
+    </div>
+    <div class="fsb-panel-body" id="fsb-points-body-{{ section.id }}"></div>
+  </div>
+  <!-- Rewards Panel (BON Loyalty - fully dynamic) -->
+  <div class="fsb-side-panel" id="fsb-panel-rewards-{{ section.id }}" data-fsb-panel="rewards">
+    <div class="fsb-panel-head">
+      <h3>{{ section.settings.rewards_text | default: 'Rewards' }}</h3>
+      <button type="button" class="fsb-panel-close" data-fsb-close aria-label="Close">
+        <svg class="fsb-close-icon-desktop" width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="21" height="13" viewBox="0 0 21 13" focusable="false" role="presentation" data-garden-id="buttons.icon" data-garden-version="8.76.9" class="StyledIcon-sc-19meqgg-0 cxMMcO fsb-close-icon-mobile"><path fill-rule="evenodd" clip-rule="evenodd" fill="currentColor" d="M20.1005 2.7169L10.9931 11.8244C10.4724 12.3451 9.62815 12.3451 9.10745 11.8244L-8.00829e-06 2.7169L1.88561 0.831278L10.0503 8.99593L18.2149 0.831278L20.1005 2.7169Z"/></svg>
+      </button>
+    </div>
+    <div class="fsb-panel-body" id="fsb-rewards-body-{{ section.id }}"></div>
+  </div>
+
+  <!-- Orders Panel -->
+  <div class="fsb-side-panel" id="fsb-panel-orders-{{ section.id }}" data-fsb-panel="orders">
+    <div class="fsb-panel-head">
+      <h3>Orders</h3>
+      <button type="button" class="fsb-panel-close" data-fsb-close aria-label="Close">
+        <svg class="fsb-close-icon-desktop" width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="21" height="13" viewBox="0 0 21 13" focusable="false" role="presentation" data-garden-id="buttons.icon" data-garden-version="8.76.9" class="StyledIcon-sc-19meqgg-0 cxMMcO fsb-close-icon-mobile"><path fill-rule="evenodd" clip-rule="evenodd" fill="currentColor" d="M20.1005 2.7169L10.9931 11.8244C10.4724 12.3451 9.62815 12.3451 9.10745 11.8244L-8.00829e-06 2.7169L1.88561 0.831278L10.0503 8.99593L18.2149 0.831278L20.1005 2.7169Z"/></svg>
+      </button>
+    </div>
+    <div class="fsb-panel-body">
+      {% if customer %}
+        {% if customer.orders.size > 0 %}
+          <ul class="fsb-list">
+            {% for order in customer.orders %}
+              <li class="fsb-list-card">
+                <div class="fsb-list-card-top">
+                  <div>
+                    <strong>{{ order.name }}</strong>
+                    <span class="fsb-price">{{ order.total_price | money }}</span>
+                  </div>
+                  {% assign fsb_order_status = order.fulfillment_status | default: order.financial_status | default: 'unfulfilled' %}
+                  {% assign fsb_order_status_handle = fsb_order_status | handleize %}
+                  {% assign fsb_order_status_label = fsb_order_status | replace: '_', ' ' | capitalize %}
+                  {% if fsb_order_status_handle == 'partial' %}
+                    {% assign fsb_order_status_handle = 'partially-fulfilled' %}
+                    {% assign fsb_order_status_label = 'Partially fulfilled' %}
+                  {% endif %}
+                  <span class="fsb-badge fsb-badge-{{ fsb_order_status_handle }}">
+                    {{ fsb_order_status_label }}
+                  </span>
+                </div>
+                <div class="fsb-list-card-meta">
+                  {{ order.created_at | date: "%d %b %Y" }} · {{ order.line_items.size }} item{% if order.line_items.size != 1 %}s{% endif %}
+                </div>
+                <button type="button" class="fsb-list-card-link fsb-od-trigger" data-fsb-od="{{ order.id }}">View details ›</button>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="fsb-panel-empty">You haven't placed any orders yet.</p>
+        {% endif %}
+      {% else %}
+        <p class="fsb-panel-empty">Please <a href="{{ routes.account_login_url }}">log in</a> to view your orders.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Order Details Panel (pair drawer, opens beside Orders / Membership) -->
+  <div class="fsb-side-panel fsb-panel-orderdetail" id="fsb-panel-orderdetail-{{ section.id }}" data-fsb-panel="orderdetail">
+    <div class="fsb-panel-head">
+      <button type="button" class="fsb-od-back" data-fsb-od-back aria-label="Back">
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M12.5 4L6 10l6.5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h3>Order details</h3>
+      <button type="button" class="fsb-panel-close" data-fsb-close aria-label="Close">
+        <svg class="fsb-close-icon-desktop" width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg class="fsb-close-icon-mobile" width="21" height="13" viewBox="0 0 21 13" fill="none"><path d="M1 2l9.5 9L20 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="fsb-panel-body fsb-od-body">
+      {% if customer %}{% for order in customer.orders %}
+        <div class="fsb-od" id="fsb-od-{{ section.id }}-{{ order.id }}" data-order-id="{{ order.id }}" hidden>
+          <div class="fsb-od-head">
+            <div class="fsb-od-title">
+              <strong class="fsb-od-name">{{ order.name }}</strong>
+              <span class="fsb-od-date">{{ order.created_at | date: "%d %b %Y | %H:%M" }}</span>
+            </div>
+            {% if order.order_status_url %}
+              <a class="fsb-od-track" href="{{ order.order_status_url }}" target="_blank" rel="noopener">Track order</a>
+            {% endif %}
+          </div>
+          <div class="fsb-od-row"><b>Payment Status</b>
+            {%- assign _pay = order.financial_status | default: 'unknown' | handleize -%}
+            <span class="fsb-badge fsb-od-badge fsb-od-pay-{{ _pay }}">{{ order.financial_status_label | default: order.financial_status | capitalize }}</span>
+          </div>
+          <div class="fsb-od-row"><b>Fulfillment Status</b>
+            {%- assign _ful = order.fulfillment_status | default: 'unfulfilled' | handleize -%}
+            <span class="fsb-badge fsb-od-badge fsb-od-ful-{{ _ful }}">{{ order.fulfillment_status_label | default: order.fulfillment_status | default: 'Unfulfilled' | capitalize }}</span>
+          </div>
+          {% if order.cancelled_at %}
+            <div class="fsb-od-row fsb-od-row-col"><b>Remark</b>
+              <span class="fsb-od-text">Order Cancelled on {{ order.cancelled_at | date: "%d %b %Y 'at' %I:%M %p" }}<br>Reason: {{ order.cancel_reason_label | default: order.cancel_reason | default: '—' }}</span>
+            </div>
+          {% endif %}
+          <div class="fsb-od-row fsb-od-row-col"><b>Shipping Address</b>
+            <span class="fsb-od-text">{% if order.shipping_address %}{{ order.shipping_address | format_address }}{% else %}—{% endif %}</span>
+          </div>
+          <div class="fsb-od-row fsb-od-row-col"><b>Billing Address</b>
+            <span class="fsb-od-text">{% if order.billing_address %}{{ order.billing_address | format_address }}{% else %}—{% endif %}</span>
+          </div>
+          <div class="fsb-od-products">
+            {% for line_item in order.line_items %}
+              <div class="fsb-od-item">
+                <div class="fsb-od-thumb">
+                  {% if line_item.image %}
+                    <img src="{{ line_item.image | image_url: width: 96 }}" alt="{{ line_item.title | escape }}" loading="lazy">
+                  {% endif %}
+                </div>
+                <div class="fsb-od-item-info">
+                  <span class="fsb-od-item-title">{{ line_item.title }}</span>
+                  {% if line_item.variant_title != 'Default Title' and line_item.variant_title != blank %}
+                    <span class="fsb-od-item-variant">{{ line_item.variant_title }}</span>
+                  {% endif %}
+                  <span class="fsb-od-item-qty">&times;{{ line_item.quantity }}</span>
+                  {% if line_item.line_level_discount_allocations.size > 0 %}
+                    <span class="fsb-od-item-disc">{{ line_item.line_level_discount_allocations[0].discount_application.title | default: 'Discount applied' }}</span>
+                  {% elsif line_item.original_price > line_item.final_price %}
+                    <span class="fsb-od-item-disc">Discount applied</span>
+                  {% endif %}
+                </div>
+                <div class="fsb-od-item-price">
+                  <span class="fsb-od-item-total">{{ line_item.final_line_price | money_with_currency }}</span>
+                  {% if line_item.original_line_price > line_item.final_line_price %}
+                    <s class="fsb-od-item-compare">{{ line_item.original_line_price | money_with_currency }}</s>
+                  {% endif %}
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+          <div class="fsb-od-totals">
+            <div class="fsb-od-trow"><span>Subtotal</span><span>{{ order.line_items_subtotal_price | money_with_currency }}</span></div>
+            <div class="fsb-od-trow"><span>Shipping{% if order.shipping_method %}<br><small>{{ order.shipping_method.title }}</small>{% endif %}</span><span>{{ order.shipping_price | money_with_currency }}</span></div>
+            <div class="fsb-od-trow fsb-od-total"><span>TOTAL</span><span>{{ order.total_price | money_with_currency }}</span></div>
+          </div>
+          {% if order.note != blank %}
+            <div class="fsb-od-row fsb-od-row-col"><b>Order notes</b><span class="fsb-od-text">{{ order.note }}</span></div>
+          {% endif %}
+        </div>
+      {% endfor %}{% endif %}
+    </div>
+  </div><!-- /Order Details panel -->
+
+  <!-- Address Panel -->
+  <div class="fsb-side-panel" id="fsb-panel-address-{{ section.id }}" data-fsb-panel="address">
+    <div class="fsb-panel-head">
+      <h3>Address Book</h3>
+      <button type="button" class="fsb-panel-close" data-fsb-close aria-label="Close">
+        <svg class="fsb-close-icon-desktop" width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="21" height="13" viewBox="0 0 21 13" focusable="false" role="presentation" data-garden-id="buttons.icon" data-garden-version="8.76.9" class="StyledIcon-sc-19meqgg-0 cxMMcO fsb-close-icon-mobile"><path fill-rule="evenodd" clip-rule="evenodd" fill="currentColor" d="M20.1005 2.7169L10.9931 11.8244C10.4724 12.3451 9.62815 12.3451 9.10745 11.8244L-8.00829e-06 2.7169L1.88561 0.831278L10.0503 8.99593L18.2149 0.831278L20.1005 2.7169Z"/></svg>
+      </button>
+    </div>
+    <div class="fsb-panel-body">
+      {% if customer %}
+        {% if customer.addresses.size > 0 %}
+          <ul class="fsb-list">
+            {% for address in customer.addresses %}
+              <li class="fsb-list-card">
+                <div class="fsb-list-card-top">
+                  <strong>{{ address.company | default: 'Address' }}</strong>
+                  {% if address.id == customer.default_address.id %}
+                    <span class="fsb-badge fsb-badge-primary">Primary</span>
+                  {% endif %}
+                  <button
+                    type="button"
+                    class="fsb-edit-link fsb-edit-address-trigger"
+                    data-fsb-edit-address
+                    data-address-id="{{ address.id }}"
+                    aria-label="Edit address"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5Z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </button>
+                </div>
+                <div class="fsb-list-card-meta">
+                  {{ address.address1 }}{% if address.address2 != blank %}, {{ address.address2 }}{% endif %}
+
+                  {{ address.city }}{% if address.province_code %}, {{ address.province_code }}{% endif %} {{ address.zip }}
+
+                  {{ address.country }}
+                </div>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="fsb-panel-empty">No saved addresses yet.</p>
+        {% endif %}
+        <button type="button" class="fsb-add-new" id="fsb-add-address-btn-{{ section.id }}">+ Add new address</button>
+      {% else %}
+        <p class="fsb-panel-empty">Please <a href="{{ routes.account_login_url }}">log in</a> to view your addresses.</p>
+      {% endif %}
+    </div>
+  </div>
+  <!-- Menu Panel (drill-down style: parent click shows only children in a new view) -->
+  <div class="fsb-side-panel" id="fsb-panel-menu-{{ section.id }}" data-fsb-panel="menu">
+    <div class="fsb-panel-head">
+      <button type="button" class="fsb-panel-back" id="fsb-menu-back-{{ section.id }}" style="display:none;" aria-label="Back">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h3 id="fsb-menu-title-{{ section.id }}">{{ section.settings.menu_list.title | default: 'Menu' }}</h3>
+      <button type="button" class="fsb-panel-close" data-fsb-close aria-label="Close">
+        <svg class="fsb-close-icon-desktop" width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="21" height="13" viewBox="0 0 21 13" focusable="false" role="presentation" data-garden-id="buttons.icon" data-garden-version="8.76.9" class="StyledIcon-sc-19meqgg-0 cxMMcO fsb-close-icon-mobile"><path fill-rule="evenodd" clip-rule="evenodd" fill="currentColor" d="M20.1005 2.7169L10.9931 11.8244C10.4724 12.3451 9.62815 12.3451 9.10745 11.8244L-8.00829e-06 2.7169L1.88561 0.831278L10.0503 8.99593L18.2149 0.831278L20.1005 2.7169Z"/></svg>
+      </button>
+    </div>
+    <div class="fsb-panel-body fsb-menu-panel-body">
+
+      <div class="fsb-menu-fallback" id="fsb-menu-fallback-{{ section.id }}">
+
+      {% liquid
+        assign desktop_menu_handle = section.settings.menu_list
+        assign mobile_menu_handle = section.settings.mobile_menu_list | default: section.settings.menu_list
+        assign has_distinct_mobile_menu = false
+        if section.settings.mobile_menu_list != blank and section.settings.mobile_menu_list != section.settings.menu_list
+          assign has_distinct_mobile_menu = true
+        endif
+      %}
+      {% if desktop_menu_handle != blank %}
+        <!-- Desktop menu (also used on mobile when no separate mobile menu is chosen) -->
+        <ul class="fsb-menu-list fsb-menu-root fsb-menu-view-desktop{% unless has_distinct_mobile_menu %} fsb-menu-view-mobile{% endunless %}" data-level="0">
+          {% for link in linklists[desktop_menu_handle].links %}
+            <li class="fsb-menu-item{% if link.links.size > 0 %} fsb-has-children{% endif %}" data-title="{{ link.title | escape }}">
+              {% if link.links.size > 0 %}
+                <button type="button" class="fsb-menu-row fsb-menu-parent" data-target="sub-{{ forloop.index }}">
+                  <span>{{ link.title }}</span>
+                  <span class="fsb-menu-arrow">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"> <path d="M10 7L15 12L10 17" stroke="#aaa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path> </g>
+                   </svg>
+                  </span>
+                </button>
+                <ul class="fsb-menu-list fsb-menu-sub" id="sub-{{ forloop.index }}" data-level="1">
+                  {% for sublink in link.links %}
+                    <li class="fsb-menu-item">
+                      <a href="{{ sublink.url }}" class="fsb-menu-row">
+                        <span>{{ sublink.title }}</span>
+                        <span class="fsb-menu-arrow">
+                          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"> <path d="M10 7L15 12L10 17" stroke="#aaa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path> </g>
+                        </svg>
+                        </span>
+                      </a>
+                    </li>
+                  {% endfor %}
+                </ul>
+              {% else %}
+                <a href="{{ link.url }}" class="fsb-menu-row">
+                  <span>{{ link.title }}</span>
+                  <span class="fsb-menu-arrow">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"> <path d="M10 7L15 12L10 17" stroke="#aaa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path> </g>
+                   </svg>
+                  </span>
+                </a>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+        {% if has_distinct_mobile_menu %}
+          <!-- Mobile-only menu: shown instead of the desktop menu below 767px -->
+          <ul class="fsb-menu-list fsb-menu-root fsb-menu-view-mobile" data-level="0">
+            {% for link in linklists[mobile_menu_handle].links %}
+              <li class="fsb-menu-item{% if link.links.size > 0 %} fsb-has-children{% endif %}" data-title="{{ link.title | escape }}">
+                {% if link.links.size > 0 %}
+                  <button type="button" class="fsb-menu-row fsb-menu-parent" data-target="mob-sub-{{ forloop.index }}">
+                    <span>{{ link.title }}</span>
+                    <span class="fsb-menu-arrow">
+                      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"> <path d="M10 7L15 12L10 17" stroke="#aaa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path> </g>
+                     </svg>
+                    </span>
+                  </button>
+                  <ul class="fsb-menu-list fsb-menu-sub" id="mob-sub-{{ forloop.index }}" data-level="1">
+                    {% for sublink in link.links %}
+                      <li class="fsb-menu-item">
+                        <a href="{{ sublink.url }}" class="fsb-menu-row">
+                          <span>{{ sublink.title }}</span>
+                          <span class="fsb-menu-arrow">
+                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"> <path d="M10 7L15 12L10 17" stroke="#aaa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path> </g>
+                          </svg>
+                          </span>
+                        </a>
+                      </li>
+                    {% endfor %}
+                  </ul>
+                {% else %}
+                  <a href="{{ link.url }}" class="fsb-menu-row">
+                    <span>{{ link.title }}</span>
+                    <span class="fsb-menu-arrow">
+                      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"> <path d="M10 7L15 12L10 17" stroke="#aaa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path> </g>
+                     </svg>
+                    </span>
+                  </a>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+       <h2 class="footer-copyright-title">
+          {{ section.settings.copyright_text }}
+        </h2>
+        <p class="footer-copyright-description">
+          {{ section.settings.copyright_description }}
+        </p>
+      {% endif %}
+      </div><!-- /.fsb-menu-fallback -->
+
+      {% if section.settings.use_theme_mobile_menu %}
+        <!-- Theme mobile menu is cloned here by JavaScript (same as the header
+             hamburger menu: links, child links, mega-menu blocks, images,
+             badges, login/register + track-order links). -->
+        <div class="fsb-theme-menu-slot" id="fsb-theme-menu-slot-{{ section.id }}"></div>
+      {% endif %}
+    </div>
+  </div>
+  <!-- Region & Language Panel -->
+  <div class="fsb-side-panel" id="fsb-panel-region-{{ section.id }}" data-fsb-panel="region">
+    <div class="fsb-panel-head">
+      <h3>Region &amp; Language</h3>
+      <button type="button" class="fsb-panel-close" data-fsb-close aria-label="Close">
+        <svg class="fsb-close-icon-desktop" width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="21" height="13" viewBox="0 0 21 13" focusable="false" role="presentation" data-garden-id="buttons.icon" data-garden-version="8.76.9" class="StyledIcon-sc-19meqgg-0 cxMMcO fsb-close-icon-mobile"><path fill-rule="evenodd" clip-rule="evenodd" fill="currentColor" d="M20.1005 2.7169L10.9931 11.8244C10.4724 12.3451 9.62815 12.3451 9.10745 11.8244L-8.00829e-06 2.7169L1.88561 0.831278L10.0503 8.99593L18.2149 0.831278L20.1005 2.7169Z"/></svg>
+      </button>
+    </div>
+    <div class="fsb-panel-body fsb-rl-body">
+      <div class="fsb-rl-section">
+        <div class="fsb-rl-label">Region</div>
+        <ul class="fsb-rl-list" id="fsb-region-list-{{ section.id }}">
+          {%- if localization.available_countries and localization.available_countries.size > 0 -%}
+            {%- for country in localization.available_countries -%}
+              <li>
+                <button type="button"
+                        class="fsb-rl-item fsb-region-option {% if country.iso_code == localization.country.iso_code %}is-current{% endif %}"
+                        data-country="{{ country.iso_code }}">
+                  <span class="fsb-rl-text">{{ country.name }}</span>
+                  <span class="fsb-rl-check" aria-hidden="true">
+                    <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </span>
+                </button>
+              </li>
+            {%- endfor -%}
+          {%- else -%}
+            <li class="fsb-panel-empty" id="fsb-region-empty-{{ section.id }}">Loading regions…</li>
+          {%- endif -%}
+        </ul>
+      </div>
+      <div class="fsb-rl-section">
+        <div class="fsb-rl-label">Language</div>
+        <ul class="fsb-rl-list" id="fsb-lang-list-{{ section.id }}">
+          {%- if localization.available_languages and localization.available_languages.size > 0 -%}
+            {%- for language in localization.available_languages -%}
+              <li>
+                <button type="button"
+                        class="fsb-rl-item fsb-lang-option {% if language.iso_code == localization.language.iso_code %}is-current{% endif %}"
+                        data-lang="{{ language.iso_code }}">
+                  <span class="fsb-rl-text">{{ language.endonym_name | default: language.name }}</span>
+                  <span class="fsb-rl-check" aria-hidden="true">
+                    <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </span>
+                </button>
+              </li>
+            {%- endfor -%}
+          {%- else -%}
+            <li class="fsb-panel-empty" id="fsb-lang-empty-{{ section.id }}">Loading languages…</li>
+          {%- endif -%}
+        </ul>
+      </div>
+      <div class="fsb-rl-hidden-forms" aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;">
+        {%- form 'localization', id: 'fsb-country-form-' | append: section.id, class: 'fsb-country-form' -%}
+          <input type="hidden" name="return_to" value="{{ request.path }}">
+          <select name="country_code" id="fsb-country-select-{{ section.id }}">
+            {%- if localization.available_countries -%}
+              {%- for country in localization.available_countries -%}
+                <option value="{{ country.iso_code }}" {% if country.iso_code == localization.country.iso_code %}selected{% endif %}>{{ country.name }}</option>
+              {%- endfor -%}
+            {%- endif -%}
+          </select>
+        {%- endform -%}
+        {%- form 'localization' -%}
+            <input type="hidden" name="return_to" value="{{ request.path }}">
+            <select name="locale_code" id="fsb-lang-select-{{ section.id }}">
+            {%- if localization.available_languages -%}
+              {%- for language in localization.available_languages -%}
+                <option value="{{ language.iso_code }}" {% if language.iso_code == localization.language.iso_code %}selected{% endif %}>{{ language.endonym_name | default: language.name }}</option>
+              {%- endfor -%}
+            {%- endif -%}
+          </select>
+        {%- endform -%}
+      </div>
+    </div>
+    <div class="fsb-panel-foot fsb-rl-foot">
+      <button type="button" class="fsb-rl-apply" id="fsb-rl-apply-{{ section.id }}">Apply Changes</button>
+    </div>
+  </div>
+  <!-- Notifications Panel -->
+  <div class="fsb-side-panel" id="fsb-panel-notifications-{{ section.id }}" data-fsb-panel="notifications">
+    <div class="fsb-panel-head">
+      <h3>Notifications <span class="fsb-panel-count" id="fsb-notif-count-{{ section.id }}">0</span></h3>
+      <button type="button" class="fsb-panel-close" data-fsb-close aria-label="Close">
+        <svg class="fsb-close-icon-desktop" width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="21" height="13" viewBox="0 0 21 13" focusable="false" role="presentation" data-garden-id="buttons.icon" data-garden-version="8.76.9" class="StyledIcon-sc-19meqgg-0 cxMMcO fsb-close-icon-mobile"><path fill-rule="evenodd" clip-rule="evenodd" fill="currentColor" d="M20.1005 2.7169L10.9931 11.8244C10.4724 12.3451 9.62815 12.3451 9.10745 11.8244L-8.00829e-06 2.7169L1.88561 0.831278L10.0503 8.99593L18.2149 0.831278L20.1005 2.7169Z"/></svg>
+      </button>
+    </div>
+    <div class="fsb-panel-body">
+      <div class="fsb-notif-toolbar">
+        <button type="button" class="fsb-mark-all-read" id="fsb-mark-all-read-{{ section.id }}">Mark all as read</button>
+      </div>
+      <ul class="fsb-list fsb-notif-list" id="fsb-notif-list-{{ section.id }}">
+        {% assign has_manual_notifs = false %}
+        {%- comment -%} Automatic sale notification {%- endcomment -%}
+        {% if section.settings.enable_sale_notification and section.settings.sale_collection != blank %}
+          {% assign sale_collection = collections[section.settings.sale_collection] %}
+          {% if sale_collection and sale_collection.products_count > 0 %}
+            {% assign max_discount = 0 %}
+            {% for product in sale_collection.products limit: 50 %}
+              {% if product.compare_at_price > product.price %}
+                {% assign this_discount = product.compare_at_price | minus: product.price | times: 100.0 | divided_by: product.compare_at_price | round %}
+                {% if this_discount > max_discount %}
+                  {% assign max_discount = this_discount %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+            {% if max_discount > 0 %}
+              {% assign has_manual_notifs = true %}
+              <li class="fsb-list-card fsb-notif-card is-unread" data-notif-id="auto-sale-{{ sale_collection.id }}">
+                <span class="fsb-notif-dot-indicator" aria-hidden="true"></span>
+                <div class="fsb-notif-content">
+                  <div class="fsb-notif-title">
+                    {% if section.settings.sale_badge_label != blank %}<span class="fsb-notif-sale-badge">{{ section.settings.sale_badge_label }}</span>{% endif %}{{ section.settings.sale_title | default: 'Sale is Live!' }}
+                  </div>
+                  <div class="fsb-notif-text">
+                    {% if section.settings.sale_message != blank %}
+                      {{ section.settings.sale_message }}
+                    {% else %}
+                      Up to {{ max_discount }}% off in {{ sale_collection.title }} — while it lasts.
+                    {% endif %}
+                  </div>
+                  <div class="fsb-notif-time">Live now</div>
+                  <a href="{{ sale_collection.url }}" class="fsb-list-card-link">Shop now ›</a>
+                </div>
+              </li>
+            {% endif %}
+          {% endif %}
+        {% endif %}
+      </ul>
+      <div id="fsb-notif-app-slot-{{ section.id }}"></div>
+      {% unless has_manual_notifs %}
+        <p class="fsb-panel-empty" id="fsb-notif-empty-{{ section.id }}">No notifications right now.</p>
+      {% endunless %}
+    </div>
+  </div>
+  <!-- Add Address Panel -->
+  <div class="fsb-side-panel" id="fsb-panel-add-address-{{ section.id }}" data-fsb-panel="add-address">
+    <div class="fsb-panel-head">
+      <button type="button" class="fsb-panel-back" id="fsb-address-back-{{ section.id }}" aria-label="Back">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h3>Add Address</h3>
+      <button type="button" class="fsb-panel-close" data-fsb-close aria-label="Close">
+        <svg class="fsb-close-icon-desktop" width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="21" height="13" viewBox="0 0 21 13" focusable="false" role="presentation" data-garden-id="buttons.icon" data-garden-version="8.76.9" class="StyledIcon-sc-19meqgg-0 cxMMcO fsb-close-icon-mobile"><path fill-rule="evenodd" clip-rule="evenodd" fill="currentColor" d="M20.1005 2.7169L10.9931 11.8244C10.4724 12.3451 9.62815 12.3451 9.10745 11.8244L-8.00829e-06 2.7169L1.88561 0.831278L10.0503 8.99593L18.2149 0.831278L20.1005 2.7169Z"/></svg>
+      </button>
+    </div>
+    <div class="fsb-panel-body" id="fsb-add-address-content-{{ section.id }}">
+      <!-- Address form -->
+      {%- form 'customer_address', customer.new_address, aria-labelledBy: 'AddressNewHeading' -%}
+        <div class="fields">
+          <div class="field">
+            <input type="text" id="fsb-address-firstname" name="address[first_name]" value="{{ form.first_name }}" autocomplete="given-name" placeholder="{{ 'customer.addresses.first_name' | t }}" class="full">
+            <label for="fsb-address-firstname">{{ 'customer.addresses.first_name' | t }}</label>
+          </div>
+          <div class="field">
+            <input type="text" id="fsb-address-lastname" name="address[last_name]" value="{{ form.last_name }}" autocomplete="family-name" placeholder="{{ 'customer.addresses.last_name' | t }}" class="full">
+            <label for="fsb-address-lastname">{{ 'customer.addresses.last_name' | t }}</label>
+          </div>
+        </div>
+        <div class="field">
+          <input type="text" id="fsb-address-company" name="address[company]" value="{{ form.company }}" autocomplete="organization" placeholder="{{ 'customer.addresses.company' | t }}" class="full">
+          <label for="fsb-address-company">{{ 'customer.addresses.company' | t }}</label>
+        </div>
+        <div class="field">
+          <input type="text" id="fsb-address-address1" name="address[address1]" value="{{ form.address1 }}" autocomplete="address-line1" placeholder="{{ 'customer.addresses.address1' | t }}" class="full">
+          <label for="fsb-address-address1">{{ 'customer.addresses.address1' | t }}</label>
+        </div>
+        <div class="field">
+          <input type="text" id="fsb-address-address2" name="address[address2]" value="{{ form.address2 }}" autocomplete="address-line2" placeholder="{{ 'customer.addresses.address2' | t }}" class="full">
+          <label for="fsb-address-address2">{{ 'customer.addresses.address2' | t }}</label>
+        </div>
+        <div class="field">
+          <input type="text" id="fsb-address-city" name="address[city]" value="{{ form.city }}" autocomplete="address-level2" placeholder="{{ 'customer.addresses.city' | t }}" class="full">
+          <label for="fsb-address-city">{{ 'customer.addresses.city' | t }}</label>
+        </div>
+        <div class="field">
+          <select
+            id="fsb-address-country"
+            name="address[country]"
+            data-address-country-select
+            data-default="{{ form.country }}"
+            autocomplete="country"
+            class="full"
+          >
+            {{ all_country_option_tags }}
+          </select>
+          <label for="fsb-address-country">{{ 'customer.addresses.country' | t }}</label>
+          <div class="select-arrow">{%- render 'svg-icons' with 'thb-select' -%}</div>
+        </div>
+        <div id="fsb-address-province-container" class="field" style="display: none">
+          <select
+            id="fsb-address-province"
+            name="address[province]"
+            data-default="{{ form.province }}"
+            autocomplete="address-level1"
+            class="full"
+          >
+          </select>
+          <label for="fsb-address-province">{{ 'customer.addresses.province' | t }}</label>
+          <div class="select-arrow">{%- render 'svg-icons' with 'thb-select' -%}</div>
+        </div>
+        <div class="field">
+          <input type="text" id="fsb-address-zip" name="address[zip]" value="{{ form.zip }}" autocapitalize="characters" autocomplete="postal-code" placeholder="{{ 'customer.addresses.zip' | t }}" class="full">
+          <label for="fsb-address-zip">{{ 'customer.addresses.zip' | t }}</label>
+        </div>
+        <div class="field">
+          <input type="tel" id="fsb-address-phone" name="address[phone]" value="{{ form.phone }}" autocomplete="tel" placeholder="{{ 'customer.addresses.phone' | t }}" class="full">
+          <label for="fsb-address-phone">{{ 'customer.addresses.phone' | t }}</label>
+        </div>
+        <div class="checkbox-wrapper">
+          {{ form.set_as_default_checkbox }}
+          <label for="address_default_address_new">{{ 'customer.addresses.set_default' | t }}</label>
+        </div>
+        <div class="field">
+          <button class="button full"><span>{{ 'customer.addresses.add' | t }}</span></button>
+        </div>
+      {%- endform -%}
+    </div>
+  </div>
+  <!-- Edit Address Panels -->
+  {% if customer %}
+    {% for address in customer.addresses %}
+      <div
+        class="fsb-side-panel fsb-panel-edit-address"
+        id="fsb-panel-edit-address-{{ section.id }}-{{ address.id }}"
+        data-fsb-panel="edit-address-{{ address.id }}"
+        data-address-id="{{ address.id }}"
+      >
+        <div class="fsb-panel-head">
+          <button type="button" class="fsb-panel-back fsb-edit-address-back" data-fsb-edit-back aria-label="Back">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h3>Edit Address</h3>
+          <button type="button" class="fsb-panel-close" data-fsb-close aria-label="Close">
+            <svg class="fsb-close-icon-desktop" width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="21" height="13" viewBox="0 0 21 13" focusable="false" role="presentation" data-garden-id="buttons.icon" data-garden-version="8.76.9" class="StyledIcon-sc-19meqgg-0 cxMMcO fsb-close-icon-mobile"><path fill-rule="evenodd" clip-rule="evenodd" fill="currentColor" d="M20.1005 2.7169L10.9931 11.8244C10.4724 12.3451 9.62815 12.3451 9.10745 11.8244L-8.00829e-06 2.7169L1.88561 0.831278L10.0503 8.99593L18.2149 0.831278L20.1005 2.7169Z"/></svg>
+          </button>
+        </div>
+        <div class="fsb-panel-body" id="fsb-edit-address-content-{{ section.id }}-{{ address.id }}">
+          {%- form 'customer_address', address -%}
+            <div class="fields">
+              <div class="field">
+                <input type="text" id="fsb-edit-address-firstname-{{ section.id }}-{{ address.id }}" name="address[first_name]" value="{{ form.first_name }}" autocomplete="given-name" placeholder="{{ 'customer.addresses.first_name' | t }}" class="full">
+                <label for="fsb-edit-address-firstname-{{ section.id }}-{{ address.id }}">{{ 'customer.addresses.first_name' | t }}</label>
+              </div>
+              <div class="field">
+                <input type="text" id="fsb-edit-address-lastname-{{ section.id }}-{{ address.id }}" name="address[last_name]" value="{{ form.last_name }}" autocomplete="family-name" placeholder="{{ 'customer.addresses.last_name' | t }}" class="full">
+                <label for="fsb-edit-address-lastname-{{ section.id }}-{{ address.id }}">{{ 'customer.addresses.last_name' | t }}</label>
+              </div>
+            </div>
+            <div class="field">
+              <input type="text" id="fsb-edit-address-company-{{ section.id }}-{{ address.id }}" name="address[company]" value="{{ form.company }}" autocomplete="organization" placeholder="{{ 'customer.addresses.company' | t }}" class="full">
+              <label for="fsb-edit-address-company-{{ section.id }}-{{ address.id }}">{{ 'customer.addresses.company' | t }}</label>
+            </div>
+            <div class="field">
+              <input type="text" id="fsb-edit-address-address1-{{ section.id }}-{{ address.id }}" name="address[address1]" value="{{ form.address1 }}" autocomplete="address-line1" placeholder="{{ 'customer.addresses.address1' | t }}" class="full">
+              <label for="fsb-edit-address-address1-{{ section.id }}-{{ address.id }}">{{ 'customer.addresses.address1' | t }}</label>
+            </div>
+            <div class="field">
+              <input type="text" id="fsb-edit-address-address2-{{ section.id }}-{{ address.id }}" name="address[address2]" value="{{ form.address2 }}" autocomplete="address-line2" placeholder="{{ 'customer.addresses.address2' | t }}" class="full">
+              <label for="fsb-edit-address-address2-{{ section.id }}-{{ address.id }}">{{ 'customer.addresses.address2' | t }}</label>
+            </div>
+            <div class="field">
+              <input type="text" id="fsb-edit-address-city-{{ section.id }}-{{ address.id }}" name="address[city]" value="{{ form.city }}" autocomplete="address-level2" placeholder="{{ 'customer.addresses.city' | t }}" class="full">
+              <label for="fsb-edit-address-city-{{ section.id }}-{{ address.id }}">{{ 'customer.addresses.city' | t }}</label>
+            </div>
+            <div class="field">
+              <select
+                id="fsb-edit-address-country-{{ section.id }}-{{ address.id }}"
+                name="address[country]"
+                data-address-country-select
+                data-default="{{ form.country }}"
+                autocomplete="country"
+                class="full"
+              >
+                {{ all_country_option_tags }}
+              </select>
+              <label for="fsb-edit-address-country-{{ section.id }}-{{ address.id }}">{{ 'customer.addresses.country' | t }}</label>
+              <div class="select-arrow">{%- render 'svg-icons' with 'thb-select' -%}</div>
+            </div>
+            <div id="fsb-edit-address-province-container-{{ section.id }}-{{ address.id }}" class="field" style="display: none">
+              <select
+                id="fsb-edit-address-province-{{ section.id }}-{{ address.id }}"
+                name="address[province]"
+                data-default="{{ form.province }}"
+                autocomplete="address-level1"
+                class="full"
+              >
+              </select>
+              <label for="fsb-edit-address-province-{{ section.id }}-{{ address.id }}">{{ 'customer.addresses.province' | t }}</label>
+              <div class="select-arrow">{%- render 'svg-icons' with 'thb-select' -%}</div>
+            </div>
+            <div class="field">
+              <input type="text" id="fsb-edit-address-zip-{{ section.id }}-{{ address.id }}" name="address[zip]" value="{{ form.zip }}" autocapitalize="characters" autocomplete="postal-code" placeholder="{{ 'customer.addresses.zip' | t }}" class="full">
+              <label for="fsb-edit-address-zip-{{ section.id }}-{{ address.id }}">{{ 'customer.addresses.zip' | t }}</label>
+            </div>
+            <div class="field">
+              <input type="tel" id="fsb-edit-address-phone-{{ section.id }}-{{ address.id }}" name="address[phone]" value="{{ form.phone }}" autocomplete="tel" placeholder="{{ 'customer.addresses.phone' | t }}" class="full">
+              <label for="fsb-edit-address-phone-{{ section.id }}-{{ address.id }}">{{ 'customer.addresses.phone' | t }}</label>
+            </div>
+            <div class="checkbox-wrapper">
+              {{ form.set_as_default_checkbox }}
+              <label for="address_default_address_{{ form.id }}">{{ 'customer.addresses.set_default' | t }}</label>
+            </div>
+            <div class="field">
+              <button class="button full"><span>{{ 'customer.addresses.update' | t }}</span></button>
+            </div>
+          {%- endform -%}
+        </div>
+      </div>
+    {% endfor %}
+  {% endif %}
+</div>
