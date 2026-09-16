@@ -143,19 +143,28 @@
     height: 100vh !important;
     z-index: 1002 !important;
     pointer-events: none !important;
+    visibility: hidden !important;
+    overflow: hidden !important;
     {% if section.settings.position == 'left' %}
     left: var(--fsb-sidebar-span) !important;
     right: auto !important;
-    transform: translateX(-110%) !important;
+    transform: translateX(-150%) !important;
     {% else %}
     right: var(--fsb-sidebar-span) !important;
     left: auto !important;
-    transform: translateX(110%) !important;
+    transform: translateX(150%) !important;
     {% endif %}
   }
   .cart-drawer.active{
     transform: translateX(0) !important;
     pointer-events: auto !important;
+    visibility: visible !important;
+    overflow-y: auto !important;
+  }
+  .cart-drawer:not(.active){
+    visibility: hidden !important;
+    pointer-events: none !important;
+    overflow: hidden !important;
   }
   @media only screen and (max-width: 767px){
     #sid-{{ section.id }} .fsb-container{
