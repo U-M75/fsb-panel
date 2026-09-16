@@ -365,8 +365,106 @@ body.fsb-panel-open #sid-{{ section.id }} .fsb-container{
   pointer-events: none;
 }
 .fsb-panel-overlay.active {
-  pointer-events: auto;
+  pointer-events: none;
 }
+@media only screen and (max-width: 767px) {
+  .fsb-panel-overlay.active {
+    pointer-events: auto;
+  }
+}
+
+/* ============ CHATBOT / ZENDESK POPUP & LAUNCHER ============ */
+/* Hide all default bottom-right floating chat buttons / launchers */
+#launcher,
+iframe#launcher,
+[id="launcher"],
+[id*="launcher" i],
+.zEWidget-launcher,
+[class*="launcher" i],
+iframe[title*="Launcher" i],
+iframe[title*="Button to launch messaging window" i],
+iframe[title*="Button to launch chat" i],
+div[data-testid="launcher-container"],
+[data-testid="launcher-container"],
+[data-testid="launcher"],
+[data-testid="launcher-badge"],
+#web-messenger-container > button,
+#web-messenger-container [data-testid="launcher"],
+#web-messenger-container button[aria-label],
+#shopify-chat,
+#shopify-chat-button,
+iframe#dummy-chat-button-iframe,
+div[id^="shopify-chat"],
+#gorgias-chat-messenger-button,
+#gorgias-chat-container > button,
+#tidio-chat-iframe,
+#chat-widget-container,
+div.zopim,
+iframe.zopim {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  max-width: 0 !important;
+  max-height: 0 !important;
+  position: fixed !important;
+  bottom: -99999px !important;
+  right: -99999px !important;
+  transform: scale(0) !important;
+}
+
+/* Position chat messenger window on the left side with top z-index */
+#web-messenger-container,
+iframe#web-messenger-container,
+iframe#webWidget,
+div#webWidget,
+div[id*="web-messenger"],
+iframe[title*="Messaging Window" i],
+iframe[title*="Chat with" i],
+iframe[title*="Help" i],
+iframe[title*="Zendesk" i],
+.zEWidget-webWidget,
+#gorgias-chat-container,
+iframe#gorgias-chat-container,
+#shopify-chat-container,
+iframe#shopify-chat-iframe {
+  {% if section.settings.position == 'left' %}
+  left: var(--fsb-sidebar-span, 60px) !important;
+  right: auto !important;
+  {% else %}
+  right: var(--fsb-sidebar-span, 60px) !important;
+  left: auto !important;
+  {% endif %}
+  bottom: 0 !important;
+  max-width: calc(100vw - var(--fsb-sidebar-span, 60px)) !important;
+  z-index: 2147483647 !important;
+}
+
+@media only screen and (max-width: 767px) {
+  #web-messenger-container,
+  iframe#web-messenger-container,
+  iframe#webWidget,
+  div#webWidget,
+  div[id*="web-messenger"],
+  iframe[title*="Messaging Window" i],
+  iframe[title*="Chat with" i],
+  iframe[title*="Help" i],
+  iframe[title*="Zendesk" i],
+  .zEWidget-webWidget,
+  #gorgias-chat-container,
+  iframe#gorgias-chat-container,
+  #shopify-chat-container,
+  iframe#shopify-chat-iframe {
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 80px !important;
+    max-width: 100vw !important;
+    z-index: 2147483647 !important;
+  }
+}
+
 .fsb-side-panel{
   position: fixed;
   top: 0;
@@ -2009,7 +2107,7 @@ body.fsb-panel-open #sid-{{ section.id }} .fsb-container{
 #fsb-bon-frame-{{ section.id }}{ position:absolute; width:0; height:0; border:0; opacity:0; pointer-events:none; }
 
 /* Figma membership drawer */
-.fsb-account-panel .fsb-panel-head{padding:20px 22px}.fsb-account-brand{font:400 27px Georgia,serif;margin-right:8px}.fsb-account-body{padding:18px 22px 28px}.fsb-account-summary{display:flex;gap:18px;align-items:center;margin-bottom:18px}.fsb-account-card{width:138px;height:84px;border-radius:5px;background:linear-gradient(135deg,#e3bf70,#c89c43);color:#fff;padding:12px;display:flex;flex-direction:column;justify-content:space-between;box-sizing:border-box}.fsb-account-card-mark{font:19px Georgia,serif}.fsb-account-card-tier{font:700 13px Georgia,serif}.fsb-account-points{display:flex;flex-direction:column;gap:3px;min-width:0}.fsb-account-points small{font-size:11px;letter-spacing:1.5px;font-weight:700}.fsb-account-points strong{font:400 42px/1 Georgia,serif;color:#34383e}.fsb-account-points span{font-size:11px;color:#c79a3c}.fsb-account-progress{height:7px;background:#e7e7e7;border-radius:8px;margin:8px 0 24px;overflow:hidden}.fsb-account-progress span{display:block;height:100%;width:0;background:#d6ad5b;border-radius:8px}.fsb-account-tabs{display:flex;gap:8px;overflow-x:auto;padding:1px 0 20px;scrollbar-width:none}.fsb-account-tab{border:0;background:#f4f4f4;border-radius:22px;padding:12px 17px;white-space:nowrap;font-size:13px;color:#45484d;cursor:pointer}.fsb-account-tab.is-active{background:#3e444b;color:#fff}.fsb-account-pane{display:none}.fsb-account-pane.is-active{display:block}.fsb-account-pane h4{font-size:14px;letter-spacing:1.4px;margin:8px 0 18px}.fsb-profile-row{display:grid;grid-template-columns:125px 1fr;align-items:center;gap:12px;margin:0 0 12px}.fsb-profile-row b{font-size:12px;color:#3f4247}.fsb-profile-row>span,.fsb-profile-action{border:0;background:#f2f2f2;border-radius:24px;padding:9px 9px;font-size: 13px !important;color:#a0a0a0;text-align:left;font:inherit;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fsb-profile-action{cursor:pointer}.fsb-marketing-row{margin-top:17px}.fsb-marketing-row .fsb-switch{margin-left:auto}.fsb-switch{position:relative;width:46px;height:25px;display:inline-block}.fsb-switch input{opacity:0;width:0;height:0}.fsb-switch i{position:absolute;inset:0;border-radius:20px;background:#eee;cursor:pointer}.fsb-switch i:before{content:'';position:absolute;width:21px;height:21px;left:2px;top:2px;border-radius:50%;background:#d5a648;transition:.2s}.fsb-switch input:checked+i:before{transform:translateX(21px)}.fsb-logout-btn{display:block;width:100%;text-align:center;margin-top:20px;padding:12px;border:1px solid #e2e2e2;border-radius:24px;background:transparent;color:#3f4247;font-size:13px;font-weight:600;letter-spacing:.3px;cursor:pointer;transition:all .2s ease}.fsb-logout-btn:hover{background:#f5f5f5;border-color:#c9c9c9}.fsb-account-note{font-size:11px;color:#999;line-height:1.5;margin-top:22px}.fsb-account-pane[data-account-pane="history"] .fsb-ly-hist{margin-top:0}.fsb-account-pane[data-account-pane="rewards"] .fsb-ly{gap:12px}
+.fsb-account-panel .fsb-panel-head{padding:20px 22px}.fsb-account-brand{font:400 27px Georgia,serif;margin-right:8px}.fsb-account-body{padding:18px 22px 28px}.fsb-account-summary{display:flex;gap:18px;align-items:center;margin-bottom:18px}.fsb-account-card{width:138px;height:84px;border-radius:5px;background:linear-gradient(135deg,#e3bf70,#c89c43);color:#fff;padding:12px;display:flex;flex-direction:column;justify-content:space-between;box-sizing:border-box}.fsb-account-card-mark{font:19px Georgia,serif}.fsb-account-card-tier{font:700 13px Georgia,serif}.fsb-account-points{display:flex;flex-direction:column;gap:3px;min-width:0}.fsb-account-points small{font-size:11px;letter-spacing:1.5px;font-weight:700}.fsb-account-points strong{font:400 42px/1 Georgia,serif;color:#34383e}.fsb-account-points span{font-size:11px;color:#c79a3c}.fsb-account-progress{height:7px;background:#e7e7e7;border-radius:8px;margin:8px 0 24px;overflow:hidden}.fsb-account-progress span{display:block;height:100%;width:0;background:#d6ad5b;border-radius:8px}.fsb-account-tabs{display:flex;gap:8px;overflow-x:auto;padding:1px 0 20px;scrollbar-width:none}.fsb-account-tab{border:0;background:#f4f4f4;border-radius:22px;padding:12px 17px;white-space:nowrap;font-size:13px;color:#45484d;cursor:pointer}.fsb-account-tab.is-active{background:#3e444b;color:#fff}.fsb-account-pane{display:none}.fsb-account-pane.is-active{display:block}.fsb-account-pane h4{font-size:14px;letter-spacing:1.4px;margin:8px 0 18px}.fsb-profile-row{display:grid;grid-template-columns:125px 1fr;align-items:center;gap:12px;margin:0 0 12px}.fsb-profile-row b{font-size:12px;color:#3f4247}.fsb-profile-row>span,.fsb-profile-action{border:0;background:#f2f2f2;border-radius:24px;padding:9px 9px;font-size: 13px !important;color:#a0a0a0;text-align:left;font:inherit;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fsb-profile-action{cursor:pointer}.fsb-marketing-row{margin-top:17px}.fsb-marketing-row .fsb-switch{margin-left:auto}.fsb-switch{position:relative;width:46px;height:25px;display:inline-block}.fsb-switch input{opacity:0;width:0;height:0}.fsb-switch i{position:absolute;inset:0;border-radius:20px;background:#eee;cursor:pointer}.fsb-switch i:before{content:'';position:absolute;width:21px;height:21px;left:2px;top:2px;border-radius:50%;background:#d5a648;transition:.2s}.fsb-switch input:checked+i:before{transform:translateX(21px)}.fsb-logout-btn{display:block;width:30%;text-align:center;margin-top:20px;margin-left:auto;padding:12px;border:1px solid #e2e2e2;border-radius:24px;background:transparent;color:#3f4247;font-size:13px;font-weight:600;letter-spacing:.3px;cursor:pointer;transition:all .2s ease}.fsb-logout-btn:hover{background:#f5f5f5;border-color:#c9c9c9}.fsb-account-note{font-size:11px;color:#999;line-height:1.5;margin-top:22px}.fsb-account-pane[data-account-pane="history"] .fsb-ly-hist{margin-top:0}.fsb-account-pane[data-account-pane="rewards"] .fsb-ly{gap:12px}
 @media only screen and (max-width:767px){.fsb-account-panel{height:92vh!important;border-radius:18px 18px 0 0!important}.fsb-account-body{padding:16px 18px 26px}.fsb-account-summary{gap:12px}.fsb-account-card{width:118px;height:72px}.fsb-account-points strong{font-size:36px}.fsb-profile-row{grid-template-columns:82px 1fr;gap:8px}.fsb-account-tabs{margin:0 -18px;padding:1px 18px 18px}.fsb-account-tab{padding:10px 13px;font-size:12px}}
 
 /* Final Points / Rewards mockup match — the same card, tabs and history
