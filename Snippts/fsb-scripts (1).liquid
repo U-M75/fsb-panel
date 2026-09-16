@@ -95,6 +95,9 @@
     if (cartDrawer) {
       cartDrawer.classList.remove('active');
       cartDrawer.style.removeProperty('transform');
+      /* drop the inline z-boost we add on open, so the hidden drawer
+         fully returns to the theme's own layering (no leftover strip) */
+      cartDrawer.style.removeProperty('z-index');
     }
   }
   function openCart(){
@@ -118,13 +121,26 @@
      ============================================================ */
   var FSB_CLOSED_KEY = 'fsb_closed_by_user';
   var FSB_PANEL_KEY  = 'fsb_open_panel';
-  function fsbMarkClosed(){ try { sessionStorage.setItem(FSB_CLOSED_KEY, 'true'); } catch(e){} }
-  function fsbClearClosed(){ try { sessionStorage.removeItem(FSB_CLOSED_KEY); } catch(e){} }
+  /* v30 — DUAL STORAGE: some browsers (private/incognito windows, in-app
+     browsers, some Android WebViews) WIPE sessionStorage on navigation,
+     which silently killed the whole keep-open behavior there. Everything
+     is written to BOTH sessionStorage and localStorage and read
+     session-first with localStorage as the fallback. */
+  function fsbSsSet(k,v){ try { sessionStorage.setItem(k,v); } catch(e){} }
+  function fsbSsDel(k){ try { sessionStorage.removeItem(k); } catch(e){} }
+  function fsbLsSet(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
+  function fsbLsDel(k){ try { localStorage.removeItem(k); } catch(e){} }
+  function fsbGetState(k){
+    var v = '';
+    try { v = sessionStorage.getItem(k) || ''; } catch(e){}
+    if (!v){ try { v = localStorage.getItem(k) || ''; } catch(e){} }
+    return v;
+  }
+  function fsbMarkClosed(){ fsbSsSet(FSB_CLOSED_KEY,'true'); fsbLsSet(FSB_CLOSED_KEY,'true'); }
+  function fsbClearClosed(){ fsbSsDel(FSB_CLOSED_KEY); fsbLsDel(FSB_CLOSED_KEY); }
   function fsbPersistOpenPanel(name){
-    try {
-      if (name) sessionStorage.setItem(FSB_PANEL_KEY, name);
-      else sessionStorage.removeItem(FSB_PANEL_KEY);
-    } catch(e){}
+    if (name){ fsbSsSet(FSB_PANEL_KEY,name); fsbLsSet(FSB_PANEL_KEY,name); }
+    else { fsbSsDel(FSB_PANEL_KEY); fsbLsDel(FSB_PANEL_KEY); }
   }
   function fsbCurrentOpenPanelName(){
     var act = overlay ? overlay.querySelector('.fsb-side-panel.active') : null;
@@ -418,12 +434,17 @@
     newCartToggle.addEventListener('click', function(e){
       e.preventDefault();
       e.stopPropagation();
-      /* Sidekick: opening the cart must NOT close the left bar — the
-         cart drawer simply opens next to it. */
       var cartDrawer = getCartDrawer();
       if (cartDrawer) {
         var isOpen = cartDrawer.classList.contains('active');
-        if (isOpen) { closeCart(); } else { openCart(); }
+        if (isOpen) {
+          closeCart();
+        } else {
+          /* ONE drawer at a time: any open fsb drawer slides away first,
+             then the cart drawer takes over (never stacked on top). */
+          closeAllPanels();
+          openCart();
+        }
         syncBodyState();
       }
     });
@@ -2746,13 +2767,12 @@
      Information & Policies, coupon apply, cart...). It stays closed only
      when the customer closed it himself. The classic first-visit default
      — My Membership — remains the fallback when nothing was open yet.
-     Mobile behavior untouched. */
+     v28: works on EVERY viewport — the old desktop-only guard is why
+     nothing ever came back on phones. */
   function initFirstVisitSidebar(){
-    var isMobile = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
-    if (isMobile) return;
     try {
-      if (sessionStorage.getItem(FSB_CLOSED_KEY)) return;
-      var saved = sessionStorage.getItem(FSB_PANEL_KEY) || '';
+      if (fsbGetState(FSB_CLOSED_KEY)) return;
+      var saved = fsbGetState(FSB_PANEL_KEY);
       if (saved){
         var target = overlay.querySelector('.fsb-side-panel[data-fsb-panel="' + saved + '"]');
         if (target){
