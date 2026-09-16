@@ -105,6 +105,7 @@
     }
   }
   function closeAllPanels(){
+    try { sessionStorage.setItem('fsb_closed_by_user', 'true'); } catch(e){}
     sectionRoot.classList.remove('fsb-region-panel-open');
     overlay.classList.remove('fsb-address-pair-open');
     overlay.classList.remove('fsb-address-edit-pair-open');
@@ -510,6 +511,175 @@
       e.preventDefault(); e.stopPropagation(); openPanel('region');
     });
   }
+  /* ============================================================
+     CHATBOT / ZENDESK SUPPORT CHAT (OPEN ON LEFT & TOGGLE & HIDE RIGHT LAUNCHER)
+     ============================================================ */
+  window.zESettings = window.zESettings || {};
+  window.zESettings.webWidget = window.zESettings.webWidget || {};
+  window.zESettings.webWidget.position = { horizontal: 'left', vertical: 'bottom' };
+  window.zESettings.webWidget.offset = { horizontal: '60px' };
+
+  var isZendeskOpen = false;
+
+  function hideChatLauncher(){
+    if (typeof window.zE !== 'undefined') {
+      try { window.zE('messenger', 'hide'); } catch(e){}
+      try { window.zE('webWidget', 'hide'); } catch(e){}
+    }
+    var selectors = [
+      '#launcher',
+      'iframe#launcher',
+      '[id="launcher"]',
+      '[id*="launcher" i]',
+      '.zEWidget-launcher',
+      'iframe[title*="Launcher" i]',
+      'iframe[title*="Button to launch" i]',
+      'div[data-testid="launcher-container"]',
+      '[data-testid="launcher"]',
+      '[data-testid="launcher-badge"]',
+      '#web-messenger-container > button',
+      '#web-messenger-container [data-testid="launcher"]',
+      '#shopify-chat',
+      '#shopify-chat-button',
+      'iframe#dummy-chat-button-iframe',
+      '#gorgias-chat-messenger-button'
+    ];
+    selectors.forEach(function(sel){
+      try {
+        var els = document.querySelectorAll(sel);
+        els.forEach(function(el){
+          el.style.setProperty('display', 'none', 'important');
+          el.style.setProperty('visibility', 'hidden', 'important');
+          el.style.setProperty('opacity', '0', 'important');
+          el.style.setProperty('pointer-events', 'none', 'important');
+          el.style.setProperty('right', '-99999px', 'important');
+          el.style.setProperty('bottom', '-99999px', 'important');
+        });
+      } catch(err){}
+    });
+  }
+
+  hideChatLauncher();
+  setInterval(hideChatLauncher, 500);
+
+  if (window.MutationObserver) {
+    var chatObserver = new MutationObserver(function(){
+      hideChatLauncher();
+      if (isZendeskOpen) repositionChatWindow();
+    });
+    chatObserver.observe(document.documentElement, { childList: true, subtree: true });
+  }
+
+  function repositionChatWindow(){
+    var chatFrames = document.querySelectorAll(
+      '#web-messenger-container, iframe#web-messenger-container, iframe#webWidget, div#webWidget, iframe[title*="Messaging Window" i], iframe[title*="Chat with" i], iframe[title*="Help" i], iframe[title*="Zendesk" i], .zEWidget-webWidget, #gorgias-chat-container, iframe#gorgias-chat-container'
+    );
+    chatFrames.forEach(function(el){
+      el.style.setProperty('left', 'var(--fsb-sidebar-span, 60px)', 'important');
+      el.style.setProperty('right', 'auto', 'important');
+      el.style.setProperty('z-index', '2147483647', 'important');
+    });
+  }
+
+  function checkZendeskDomOpen(){
+    var frame = document.querySelector('iframe#webWidget, iframe#web-messenger-container, #web-messenger-container iframe, iframe[title*="Messaging" i], iframe[title*="Chat with" i]');
+    if (frame) {
+      var style = window.getComputedStyle(frame);
+      if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && style.height !== '0px') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function toggleSupport(){
+    hideChatLauncher();
+    var currentlyOpen = isZendeskOpen || checkZendeskDomOpen();
+    if (currentlyOpen) {
+      if (typeof window.zE !== 'undefined') {
+        try { window.zE('messenger', 'close'); } catch(e){}
+        try { window.zE('webWidget', 'close'); } catch(e){}
+      }
+      if (typeof window.$zopim !== 'undefined' && window.$zopim.livechat && window.$zopim.livechat.window) {
+        try { window.$zopim.livechat.window.hide(); } catch(e){}
+      }
+      if (typeof window.GorgiasChat !== 'undefined' && window.GorgiasChat.close) {
+        try { window.GorgiasChat.close(); } catch(e){}
+      }
+      isZendeskOpen = false;
+      clearActiveIcons();
+      hideChatLauncher();
+      return;
+    }
+
+    closeAllPanels();
+    function openWidget(){
+      if (typeof window.GorgiasChat !== 'undefined' && window.GorgiasChat.open) {
+        window.GorgiasChat.open();
+        setActiveIcon('support');
+        repositionChatWindow();
+        return true;
+      }
+      if (typeof window.zE !== 'undefined') {
+        try {
+          window.zE('messenger', 'show');
+          window.zE('messenger', 'open');
+        } catch(err) {
+          try {
+            window.zE('webWidget', 'show');
+            window.zE('webWidget', 'open');
+          } catch(err2) {
+            if (window.zE.activate) window.zE.activate();
+          }
+        }
+        if (typeof window.$zopim !== 'undefined' && window.$zopim.livechat && window.$zopim.livechat.window) {
+          try { window.$zopim.livechat.window.show(); } catch(e){}
+        }
+        isZendeskOpen = true;
+        setActiveIcon('support');
+        hideChatLauncher();
+        repositionChatWindow();
+        setTimeout(function(){ hideChatLauncher(); repositionChatWindow(); }, 100);
+        setTimeout(function(){ hideChatLauncher(); repositionChatWindow(); }, 500);
+        return true;
+      }
+      return false;
+    }
+    if (openWidget()) return;
+    var attempts = 0;
+    var retry = setInterval(function(){
+      attempts++;
+      if (openWidget() || attempts > 15) clearInterval(retry);
+    }, 300);
+  }
+
+  if (typeof window.zE !== 'undefined') {
+    try {
+      window.zE('messenger:on', 'open', function(){
+        isZendeskOpen = true;
+        setActiveIcon('support');
+        hideChatLauncher();
+        repositionChatWindow();
+      });
+      window.zE('messenger:on', 'close', function(){
+        isZendeskOpen = false;
+        syncBodyState();
+        hideChatLauncher();
+      });
+      window.zE('webWidget:on', 'open', function(){
+        isZendeskOpen = true;
+        setActiveIcon('support');
+        hideChatLauncher();
+        repositionChatWindow();
+      });
+      window.zE('webWidget:on', 'close', function(){
+        isZendeskOpen = false;
+        syncBodyState();
+        hideChatLauncher();
+      });
+    } catch(e){}
+  }
+
   var supportToggle = document.getElementById('support-chat-toggle-' + sid);
   if (supportToggle) {
     var newSupportToggle = supportToggle.cloneNode(true);
@@ -517,25 +687,7 @@
     newSupportToggle.addEventListener('click', function(e){
       e.preventDefault();
       e.stopPropagation();
-      closeAllPanels();
-      function openWidget(){
-        if (typeof window.GorgiasChat !== 'undefined' && window.GorgiasChat.open) {
-          window.GorgiasChat.open(); return true;
-        }
-        if (typeof window.zE !== 'undefined') {
-          try { window.zE('messenger', 'open'); } catch(err) {
-            window.zE.activate ? window.zE.activate() : window.zE('webWidget', 'open');
-          }
-          return true;
-        }
-        return false;
-      }
-      if (openWidget()) return;
-      var attempts = 0;
-      var retry = setInterval(function(){
-        attempts++;
-        if (openWidget() || attempts > 10) clearInterval(retry);
-      }, 300);
+      toggleSupport();
     });
   }
   var notifStorageKey = 'fsb_read_notifs_' + sid;
@@ -2574,6 +2726,21 @@
     var legacyPopup = document.getElementById('flag-popup-overlay-' + sid);
     if (legacyPopup) legacyPopup.style.display = 'none';
   })();
+  /* Auto-open My Membership drawer on first visit until user closes it */
+  function initFirstVisitSidebar(){
+    var isMobile = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+    if (isMobile) return;
+    try {
+      if (!sessionStorage.getItem('fsb_closed_by_user')) {
+        openAccount();
+      }
+    } catch(e){}
+  }
+
+  initFirstVisitSidebar();
+  document.addEventListener('DOMContentLoaded', initFirstVisitSidebar);
+  window.requestAnimationFrame(initFirstVisitSidebar);
+
   window.fsbClosePanels = closeAllPanels;
   window.fsbUpdateCartCount = updateCartCount;
 })();
