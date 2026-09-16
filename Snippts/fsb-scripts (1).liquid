@@ -512,172 +512,135 @@
     });
   }
   /* ============================================================
-     CHATBOT / ZENDESK SUPPORT CHAT (OPEN ON LEFT & TOGGLE & HIDE RIGHT LAUNCHER)
+     ZENDESK SUPPORT CHAT — CONTROLLED FROM THE SIDEBAR (v25)
+       1) the default launcher bubble (bottom-right) stays HIDDEN
+          always — via the official zE API + a plain stylesheet
+          (no DOM-polling loops: those were fighting the open chat
+          window and breaking the widget);
+       2) the Support icon opens the chat window pinned LEFT
+          (CSS always applies + classic-widget settings);
+       3) clicking Support again while it is open CLOSES it; the
+          widget's own close button sets the state back too.
+     Covers Zendesk Messaging and the classic Web Widget; every API
+     call is wrapped separately so an unsupported namespace can
+     never block the other.
      ============================================================ */
   window.zESettings = window.zESettings || {};
   window.zESettings.webWidget = window.zESettings.webWidget || {};
   window.zESettings.webWidget.position = { horizontal: 'left', vertical: 'bottom' };
   window.zESettings.webWidget.offset = { horizontal: '60px' };
 
-  var isZendeskOpen = false;
+  (function(){
+    if (document.getElementById('fsb-zk-css')) return;
+    var st = document.createElement('style');
+    st.id = 'fsb-zk-css';
+    st.textContent =
+      /* hide ONLY launcher bubbles (never the chat window itself) */
+      '.zEWidget-launcher,iframe[title*="launcher" i],[data-testid="launcher"],#dummy-chat-button-iframe,#shopify-chat-button,#shopify-chat{display:none !important}'
+      /* pin Zendesk surfaces to the LEFT — Messaging & classic Web Widget */
+      + 'iframe[src*="zdassets.com"],iframe[src*="zendesk.com"],iframe[src*="smooch.io"],div#webWidget,#web-messenger-container{right:auto !important;left:calc(var(--fsb-sidebar-span,70px) + 6px) !important}'
+      + '@media (max-width:767px){iframe[src*="zdassets.com"],iframe[src*="zendesk.com"],iframe[src*="smooch.io"],div#webWidget,#web-messenger-container{left:12px !important}}';
+    (document.head || document.documentElement).appendChild(st);
+  })();
 
-  function hideChatLauncher(){
-    if (typeof window.zE !== 'undefined') {
-      try { window.zE('messenger', 'hide'); } catch(e){}
-      try { window.zE('webWidget', 'hide'); } catch(e){}
+  function zkDo(ns, cmd){
+    if (typeof window.zE === 'undefined') return false;
+    try { window.zE(ns, cmd); return true; } catch(e){ return false; }
+  }
+  function zkOn(ns, ev, cb){
+    if (typeof window.zE === 'undefined') return;
+    try { window.zE(ns, ev, cb); } catch(e){}
+  }
+  var zkOpen = false;       /* is the chat WINDOW open right now */
+  var zkEverOpened = false; /* once true, boot-hiding stops forever */
+  var zkWired = false;
+
+  function zkShow(){
+    if (typeof window.GorgiasChat !== 'undefined' && window.GorgiasChat.open
+        && typeof window.zE === 'undefined'){
+      try { window.GorgiasChat.open(); } catch(e){}
+      return true;
     }
-    var selectors = [
-      '#launcher',
-      'iframe#launcher',
-      '[id="launcher"]',
-      '[id*="launcher" i]',
-      '.zEWidget-launcher',
-      'iframe[title*="Launcher" i]',
-      'iframe[title*="Button to launch" i]',
-      'div[data-testid="launcher-container"]',
-      '[data-testid="launcher"]',
-      '[data-testid="launcher-badge"]',
-      '#web-messenger-container > button',
-      '#web-messenger-container [data-testid="launcher"]',
-      '#shopify-chat',
-      '#shopify-chat-button',
-      'iframe#dummy-chat-button-iframe',
-      '#gorgias-chat-messenger-button'
-    ];
-    selectors.forEach(function(sel){
-      try {
-        var els = document.querySelectorAll(sel);
-        els.forEach(function(el){
-          el.style.setProperty('display', 'none', 'important');
-          el.style.setProperty('visibility', 'hidden', 'important');
-          el.style.setProperty('opacity', '0', 'important');
-          el.style.setProperty('pointer-events', 'none', 'important');
-          el.style.setProperty('right', '-99999px', 'important');
-          el.style.setProperty('bottom', '-99999px', 'important');
-        });
-      } catch(err){}
-    });
-  }
-
-  hideChatLauncher();
-  setInterval(hideChatLauncher, 500);
-
-  if (window.MutationObserver) {
-    var chatObserver = new MutationObserver(function(){
-      hideChatLauncher();
-      if (isZendeskOpen) repositionChatWindow();
-    });
-    chatObserver.observe(document.documentElement, { childList: true, subtree: true });
-  }
-
-  function repositionChatWindow(){
-    var chatFrames = document.querySelectorAll(
-      '#web-messenger-container, iframe#web-messenger-container, iframe#webWidget, div#webWidget, iframe[title*="Messaging Window" i], iframe[title*="Chat with" i], iframe[title*="Help" i], iframe[title*="Zendesk" i], .zEWidget-webWidget, #gorgias-chat-container, iframe#gorgias-chat-container'
-    );
-    chatFrames.forEach(function(el){
-      el.style.setProperty('left', 'var(--fsb-sidebar-span, 60px)', 'important');
-      el.style.setProperty('right', 'auto', 'important');
-      el.style.setProperty('z-index', '2147483647', 'important');
-    });
-  }
-
-  function checkZendeskDomOpen(){
-    var frame = document.querySelector('iframe#webWidget, iframe#web-messenger-container, #web-messenger-container iframe, iframe[title*="Messaging" i], iframe[title*="Chat with" i]');
-    if (frame) {
-      var style = window.getComputedStyle(frame);
-      if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && style.height !== '0px') {
-        return true;
-      }
-    }
+    if (typeof window.zE === 'undefined') return false;
+    /* each call isolated: one bad namespace must not stop the others */
+    zkDo('messenger', 'show');
+    if (zkDo('messenger', 'open')) return true;
+    zkDo('webWidget', 'show');
+    if (zkDo('webWidget', 'open')) return true;
+    if (window.zE.activate){ try { window.zE.activate(); return true; } catch(e){} }
     return false;
   }
+  function zkHideLauncher(){
+    /* launcher-only hide: NEVER closes an open window */
+    zkDo('messenger', 'hide');
+    zkDo('webWidget', 'hide');
+  }
+  function zkShut(){
+    zkDo('messenger', 'close');
+    zkDo('webWidget', 'close');
+    zkHideLauncher();
+    if (typeof window.GorgiasChat !== 'undefined' && window.GorgiasChat.close){
+      try { window.GorgiasChat.close(); } catch(e){}
+    }
+  }
+  function zkWireEvents(){
+    if (zkWired || typeof window.zE === 'undefined') return;
+    zkOn('messenger:on', 'open',  function(){ zkOpen = true;  zkEverOpened = true; setActiveIcon('support'); });
+    zkOn('messenger:on', 'close', function(){ zkOpen = false; zkHideLauncher(); syncBodyState(); });
+    zkOn('webWidget:on', 'open',  function(){ zkOpen = true;  zkEverOpened = true; setActiveIcon('support'); });
+    zkOn('webWidget:on', 'close', function(){ zkOpen = false; zkHideLauncher(); syncBodyState(); });
+    zkWired = true;
+  }
+  /* BOOT: Zendesk loads late; until the customer ever opens the chat we
+     keep the launcher bubble suppressed. After the first real open the
+     loops stop — from then on only clicks and the widget's own events
+     control visibility, so the open window can NEVER be closed/hidden
+     by a background timer (that was the old bug). */
+  (function zkBoot(){
+    var tries = 0;
+    var fast = setInterval(function(){
+      tries++;
+      if (typeof window.zE !== 'undefined'){
+        zkWireEvents();
+        if (!zkEverOpened) zkHideLauncher();
+      }
+      if (tries > 40){
+        clearInterval(fast);
+        var slow = setInterval(function(){
+          if (zkEverOpened){ clearInterval(slow); return; }
+          if (typeof window.zE !== 'undefined') zkHideLauncher();
+        }, 4000);
+      }
+    }, 600);
+  })();
 
   function toggleSupport(){
-    hideChatLauncher();
-    var currentlyOpen = isZendeskOpen || checkZendeskDomOpen();
-    if (currentlyOpen) {
-      if (typeof window.zE !== 'undefined') {
-        try { window.zE('messenger', 'close'); } catch(e){}
-        try { window.zE('webWidget', 'close'); } catch(e){}
-      }
-      if (typeof window.$zopim !== 'undefined' && window.$zopim.livechat && window.$zopim.livechat.window) {
-        try { window.$zopim.livechat.window.hide(); } catch(e){}
-      }
-      if (typeof window.GorgiasChat !== 'undefined' && window.GorgiasChat.close) {
-        try { window.GorgiasChat.close(); } catch(e){}
-      }
-      isZendeskOpen = false;
+    if (zkOpen){
+      zkOpen = false;
+      zkShut();
       clearActiveIcons();
-      hideChatLauncher();
+      syncBodyState();
       return;
     }
-
     closeAllPanels();
-    function openWidget(){
-      if (typeof window.GorgiasChat !== 'undefined' && window.GorgiasChat.open) {
-        window.GorgiasChat.open();
-        setActiveIcon('support');
-        repositionChatWindow();
-        return true;
-      }
-      if (typeof window.zE !== 'undefined') {
-        try {
-          window.zE('messenger', 'show');
-          window.zE('messenger', 'open');
-        } catch(err) {
-          try {
-            window.zE('webWidget', 'show');
-            window.zE('webWidget', 'open');
-          } catch(err2) {
-            if (window.zE.activate) window.zE.activate();
-          }
-        }
-        if (typeof window.$zopim !== 'undefined' && window.$zopim.livechat && window.$zopim.livechat.window) {
-          try { window.$zopim.livechat.window.show(); } catch(e){}
-        }
-        isZendeskOpen = true;
-        setActiveIcon('support');
-        hideChatLauncher();
-        repositionChatWindow();
-        setTimeout(function(){ hideChatLauncher(); repositionChatWindow(); }, 100);
-        setTimeout(function(){ hideChatLauncher(); repositionChatWindow(); }, 500);
-        return true;
-      }
-      return false;
+    if (zkShow()){
+      zkOpen = true;
+      zkEverOpened = true;
+      setActiveIcon('support');
+      return;
     }
-    if (openWidget()) return;
     var attempts = 0;
     var retry = setInterval(function(){
       attempts++;
-      if (openWidget() || attempts > 15) clearInterval(retry);
-    }, 300);
-  }
-
-  if (typeof window.zE !== 'undefined') {
-    try {
-      window.zE('messenger:on', 'open', function(){
-        isZendeskOpen = true;
-        setActiveIcon('support');
-        hideChatLauncher();
-        repositionChatWindow();
-      });
-      window.zE('messenger:on', 'close', function(){
-        isZendeskOpen = false;
-        syncBodyState();
-        hideChatLauncher();
-      });
-      window.zE('webWidget:on', 'open', function(){
-        isZendeskOpen = true;
-        setActiveIcon('support');
-        hideChatLauncher();
-        repositionChatWindow();
-      });
-      window.zE('webWidget:on', 'close', function(){
-        isZendeskOpen = false;
-        syncBodyState();
-        hideChatLauncher();
-      });
-    } catch(e){}
+      if (zkShow() || attempts > 15){
+        clearInterval(retry);
+        if (attempts <= 15){
+          zkOpen = true;
+          zkEverOpened = true;
+          setActiveIcon('support');
+        }
+      }
+    }, 400);
   }
 
   var supportToggle = document.getElementById('support-chat-toggle-' + sid);
