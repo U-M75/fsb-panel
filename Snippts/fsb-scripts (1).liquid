@@ -102,10 +102,59 @@
     if (cartDrawer) {
       cartDrawer.style.removeProperty('transform');
       cartDrawer.classList.add('active');
+      /* keep the cart drawer above the fsb bar stack (z 1006) so it stays
+         fully clickable when the left bar is open behind it */
+      cartDrawer.style.setProperty('z-index', '1007', 'important');
     }
   }
+  /* ============================================================
+     SIDEKICK-STYLE PERSISTENT LEFT BAR (v26)
+     The bar is open by default and STAYS open across navigation,
+     link clicks, coupon apply, cart opens and page loads. It closes
+     ONLY when the customer explicitly closes it (X button / overlay
+     backdrop click / Escape). The open panel is remembered per
+     browser-tab session and re-opens by itself after every load,
+     so the bar feels fixed while the right side changes freely.
+     ============================================================ */
+  var FSB_CLOSED_KEY = 'fsb_closed_by_user';
+  var FSB_PANEL_KEY  = 'fsb_open_panel';
+  function fsbMarkClosed(){ try { sessionStorage.setItem(FSB_CLOSED_KEY, 'true'); } catch(e){} }
+  function fsbClearClosed(){ try { sessionStorage.removeItem(FSB_CLOSED_KEY); } catch(e){} }
+  function fsbPersistOpenPanel(name){
+    try {
+      if (name) sessionStorage.setItem(FSB_PANEL_KEY, name);
+      else sessionStorage.removeItem(FSB_PANEL_KEY);
+    } catch(e){}
+  }
+  function fsbCurrentOpenPanelName(){
+    var act = overlay ? overlay.querySelector('.fsb-side-panel.active') : null;
+    return act ? String(act.getAttribute('data-fsb-panel') || '') : '';
+  }
+  /* visual close that KEEPS the bar's state so it re-opens by itself
+     right after the upcoming page navigation */
+  function fsbCloseKeepState(){
+    var keep = fsbCurrentOpenPanelName() || 'account';
+    closeAllPanels();
+    fsbClearClosed();
+    fsbPersistOpenPanel(keep);
+  }
+  /* the ONLY close that counts as "the customer closed it himself" */
+  function fsbCustomerClose(){
+    closeAllPanels();
+    fsbMarkClosed();
+  }
+  /* BULLETPROOF keep-open: whatever unloads the page (ANY link, theme
+     menu fallback anchors, forms, redirects) — snapshot whichever panel
+     is open right now so the restore puts THAT panel back, never the
+     membership default. If nothing is open, nothing is saved. */
+  function fsbSnapshotKeep(){
+    var n = fsbCurrentOpenPanelName();
+    if (n) fsbPersistOpenPanel(n);
+  }
+  window.addEventListener('beforeunload', fsbSnapshotKeep);
+  window.addEventListener('pagehide', fsbSnapshotKeep);
   function closeAllPanels(){
-    try { sessionStorage.setItem('fsb_closed_by_user', 'true'); } catch(e){}
+    fsbPersistOpenPanel('');
     sectionRoot.classList.remove('fsb-region-panel-open');
     overlay.classList.remove('fsb-address-pair-open');
     overlay.classList.remove('fsb-address-edit-pair-open');
@@ -131,6 +180,8 @@
     var target = overlay.querySelector('.fsb-side-panel[data-fsb-panel="' + name + '"]');
     if (target) {
       target.classList.add('active');
+      fsbPersistOpenPanel(name);
+      fsbClearClosed();
       syncBodyState();
       if (name === 'region') initRegionPanel();
       if (name === 'notifications') initNotificationsPanel();
@@ -260,7 +311,9 @@
         return;
       }
       e.preventDefault();
-      closeAllPanels();
+      /* Sidekick: following a link from the bar must NOT close it — the
+         same panel re-opens by itself once the page loads on the right. */
+      fsbCloseKeepState();
       window.location.href = href;
     });
 
@@ -328,18 +381,18 @@
     setActiveIcon('address');
   }
   overlay.addEventListener('click', function(e){
-    if (e.target === overlay) closeAllPanels();
+    if (e.target === overlay) fsbCustomerClose();
   });
   overlay.addEventListener('click', function(e){
     var closeBtn = e.target.closest('[data-fsb-close]');
     if (closeBtn) {
       e.preventDefault();
       e.stopPropagation();
-      closeAllPanels();
+      fsbCustomerClose();
     }
   });
   document.addEventListener('keydown', function(e){
-    if (e.key === 'Escape') closeAllPanels();
+    if (e.key === 'Escape') fsbCustomerClose();
   });
   var cartWatchTarget = getCartDrawer();
   if (cartWatchTarget) {
@@ -365,11 +418,8 @@
     newCartToggle.addEventListener('click', function(e){
       e.preventDefault();
       e.stopPropagation();
-      sectionRoot.classList.remove('fsb-region-panel-open');
-      overlay.classList.remove('fsb-address-pair-open');
-      overlay.classList.remove('fsb-address-edit-pair-open');
-      overlay.classList.remove('fsb-od-pair-open');
-      allPanels().forEach(function(p){ p.classList.remove('active'); });
+      /* Sidekick: opening the cart must NOT close the left bar — the
+         cart drawer simply opens next to it. */
       var cartDrawer = getCartDrawer();
       if (cartDrawer) {
         var isOpen = cartDrawer.classList.contains('active');
@@ -623,6 +673,8 @@
       return;
     }
     closeAllPanels();
+    fsbMarkClosed(); /* the customer swapped the bar for chat — don't bring
+                        the bar back on the next page until an icon is tapped */
     if (zkShow()){
       zkOpen = true;
       zkEverOpened = true;
@@ -2603,7 +2655,7 @@
     var langChanged    = pendingLang && pendingLang !== currentLang;
     if (!countryChanged && !langChanged) {
       if (applyBtn){ applyBtn.disabled = false; applyBtn.textContent = 'Apply Changes'; }
-      closeAllPanels();
+      fsbCloseKeepState();
       return;
     }
     if (countryChanged && langChanged) {
@@ -2689,14 +2741,34 @@
     var legacyPopup = document.getElementById('flag-popup-overlay-' + sid);
     if (legacyPopup) legacyPopup.style.display = 'none';
   })();
-  /* Auto-open My Membership drawer on first visit until user closes it */
+  /* SIDEKICK behavior: bring the remembered panel back on every page load
+     so the bar stays open while the right side changes (menu links,
+     Information & Policies, coupon apply, cart...). It stays closed only
+     when the customer closed it himself. The classic first-visit default
+     — My Membership — remains the fallback when nothing was open yet.
+     Mobile behavior untouched. */
   function initFirstVisitSidebar(){
     var isMobile = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
     if (isMobile) return;
     try {
-      if (!sessionStorage.getItem('fsb_closed_by_user')) {
-        openAccount();
+      if (sessionStorage.getItem(FSB_CLOSED_KEY)) return;
+      var saved = sessionStorage.getItem(FSB_PANEL_KEY) || '';
+      if (saved){
+        var target = overlay.querySelector('.fsb-side-panel[data-fsb-panel="' + saved + '"]');
+        if (target){
+          if (saved === 'points' || saved === 'rewards'){
+            if (typeof bonWaitForInitialPoints === 'function'){
+              bonWaitForInitialPoints(2500).then(function(){ openPanel(saved); });
+              return;
+            }
+          }
+          if (saved === 'account'){ openAccount(); return; }
+          openPanel(saved);
+          return;
+        }
+        fsbPersistOpenPanel('');
       }
+      openAccount();
     } catch(e){}
   }
 
