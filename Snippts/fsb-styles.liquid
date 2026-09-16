@@ -22,19 +22,32 @@ body.open-cc #wrapper .click-capture {
   height: 100vh !important;
   z-index: 1002 !important;
   background: #fff !important;
-  visibility: visible !important;
+  visibility: hidden !important;
   pointer-events: none !important;
   transform: translateX(var(--fsb-hide)) !important;
-  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1) !important;
-  will-change: transform !important;
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1), visibility 0.5s !important;
+  will-change: transform, visibility !important;
   border-radius: 0 !important;
   box-shadow: none !important;
-  overflow-y: auto !important;
+  overflow: hidden !important;
+  overflow-y: hidden !important;
   opacity: 1 !important;
 }
 .cart-drawer.active {
+  visibility: visible !important;
   transform: translateX(0) !important;
   pointer-events: auto !important;
+  overflow-y: auto !important;
+}
+.cart-drawer:not(.active) {
+  visibility: hidden !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
+  overflow-y: hidden !important;
+}
+.cart-drawer:not(.active) * {
+  overflow: hidden !important;
+  pointer-events: none !important;
 }
 .cart-drawer .click-capture {
   display: none !important;
@@ -502,10 +515,14 @@ iframe#shopify-chat-iframe {
 .cart-drawer{
   left: var(--fsb-sidebar-span) !important;
   right: auto !important;
-  transform: translateX(-110%) !important;
+  transform: translateX(-150%) !important;
+  visibility: hidden !important;
+  overflow: hidden !important;
 }
 .cart-drawer.active{
   transform: translateX(0) !important;
+  visibility: visible !important;
+  overflow-y: auto !important;
 }
 {% else %}
 .fsb-side-panel{
@@ -527,10 +544,14 @@ iframe#shopify-chat-iframe {
 .cart-drawer{
   right: var(--fsb-sidebar-span) !important;
   left: auto !important;
-  transform: translateX(110%) !important;
+  transform: translateX(150%) !important;
+  visibility: hidden !important;
+  overflow: hidden !important;
 }
 .cart-drawer.active{
   transform: translateX(0) !important;
+  visibility: visible !important;
+  overflow-y: auto !important;
 }
 {% endif %}
 .fsb-panel-head{
@@ -1114,18 +1135,22 @@ iframe#shopify-chat-iframe {
     right: 0 !important;
     width: 100% !important;
     max-width: 100% !important;
-    transform: translateY(100%) !important;
+    transform: translateY(110%) !important;
     opacity: 1 !important;
     top: auto !important;
     bottom: 0 !important;
     height: 88vh !important;
     border-radius: 18px 18px 0 0 !important;
-    transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1) !important;
+    transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1), visibility 0.5s !important;
     pointer-events: none !important;
+    visibility: hidden !important;
+    overflow: hidden !important;
   }
   .cart-drawer.active {
     transform: translateY(0) !important;
     pointer-events: auto !important;
+    visibility: visible !important;
+    overflow-y: auto !important;
   }
   #sid-{{ section.id }} .fsb-container{
     {% if section.settings.position == 'left' %}
