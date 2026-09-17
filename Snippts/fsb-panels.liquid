@@ -10,7 +10,7 @@
       {% if customer %}
       <div class="fsb-account-summary" id="fsb-account-summary-{{ section.id }}"></div>
       <div class="fsb-account-tabs" role="tablist"><button type="button" class="fsb-account-tab is-active" data-account-tab="profile">Profile</button><button type="button" class="fsb-account-tab" data-account-tab="orders">Orders</button><button type="button" class="fsb-account-tab" data-account-tab="history">Points History</button><button type="button" class="fsb-account-tab" data-account-tab="rewards">Rewards</button><button type="button" class="fsb-account-tab" data-account-tab="address">Address Book</button></div>
-      <section class="fsb-account-pane is-active" data-account-pane="profile"><h4>PROFILE DETAILS</h4><div class="fsb-profile-row"><b>Name</b><span>{{ customer.name | default: customer.first_name | default: '—' }}</span></div><div class="fsb-profile-row"><b>DOB</b><span>{{ customer.metafields.custom.date_of_birth.value | default: customer.metafields.custom.dob.value | default: '—' }}</span></div><div class="fsb-profile-row"><b>Email</b><span>{{ customer.email | default: '—' }}</span></div><div class="fsb-profile-row"><b>Mobile</b><span>{{ customer.phone | default: '—' }}</span></div><div class="fsb-profile-row"><b>Region</b><button type="button" class="fsb-profile-action" data-fsb-open-region>{{ localization.country.name | default: '—' }}</button></div><div class="fsb-profile-row"><b>Language</b><button type="button" class="fsb-profile-action" data-fsb-open-region>{{ localization.language.endonym_name | default: localization.language.name | default: 'English' }}</button></div><div class="fsb-profile-row fsb-marketing-row"><b>Subscribe to exclusive offers</b><div class="fsb-marketing-ctl"><label class="fsb-switch fsb-switch-big"><input type="checkbox" id="fsb-marketing-optin-{{ section.id }}" {% if customer.accepts_marketing %}checked{% endif %}><i></i></label><span class="fsb-mkt-state" id="fsb-mkt-state-{{ section.id }}">{% if customer.accepts_marketing %}On{% else %}Off{% endif %}</span></div></div><p class="fsb-mkt-status" id="fsb-mkt-status-{{ section.id }}"></p><button type="button" class="fsb-logout-btn" id="fsb-logout-btn-{{ section.id }}" data-fsb-logout>Log out</button></section>
+      <section class="fsb-account-pane is-active" data-account-pane="profile"><h4>PROFILE DETAILS</h4><div class="fsb-profile-row"><b>Name</b><span>{{ customer.name | default: customer.first_name | default: '—' }}</span></div><div class="fsb-profile-row"><b>DOB</b><span>{{ customer.metafields.custom.date_of_birth.value | default: customer.metafields.custom.dob.value | default: '—' }}</span></div><div class="fsb-profile-row"><b>Email</b><span>{{ customer.email | default: '—' }}</span></div><div class="fsb-profile-row"><b>Mobile</b><span>{{ customer.phone | default: '—' }}</span></div><div class="fsb-profile-row"><b>Region</b><button type="button" class="fsb-profile-action" data-fsb-open-region>{% if localization.country.iso_code == "HK" %}Hong Kong SAR{% else %}International{% endif %}</button></div><div class="fsb-profile-row fsb-profile-lang-row"><b>Language</b><div class="fsb-lang-dropdown" id="fsb-lang-dropdown-{{ section.id }}">{%- assign cur_lang = localization.language.iso_code | downcase -%}<button type="button" class="fsb-lang-dd-trigger" id="fsb-lang-dd-trigger-{{ section.id }}" aria-expanded="false" aria-haspopup="listbox"><span class="fsb-lang-dd-current">{%- if cur_lang == 'ja' -%}日本語{%- elsif cur_lang == 'ko' -%}한국어{%- elsif cur_lang == 'zh-cn' or cur_lang == 'zh-hans' or cur_lang == 'zh' -%}简体中文{%- elsif cur_lang == 'zh-tw' or cur_lang == 'zh-hant' -%}繁體中文{%- else -%}English{%- endif -%}</span><svg class="fsb-lang-dd-arrow" width="12" height="12" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button><div class="fsb-lang-dd-menu" role="listbox" id="fsb-lang-dd-menu-{{ section.id }}"><div class="fsb-lang-dd-item {% if cur_lang == 'en' %}is-selected{% endif %}" role="option" data-lang="en" data-ly-id="ly16719">English</div><div class="fsb-lang-dd-item {% if cur_lang == 'ja' %}is-selected{% endif %}" role="option" data-lang="ja" data-ly-id="ly16725">日本語</div><div class="fsb-lang-dd-item {% if cur_lang == 'ko' %}is-selected{% endif %}" role="option" data-lang="ko" data-ly-id="ly16726">한국어</div><div class="fsb-lang-dd-item {% if cur_lang == 'zh-cn' or cur_lang == 'zh-hans' or cur_lang == 'zh' %}is-selected{% endif %}" role="option" data-lang="zh-CN" data-ly-id="ly16720">简体中文</div><div class="fsb-lang-dd-item {% if cur_lang == 'zh-tw' or cur_lang == 'zh-hant' %}is-selected{% endif %}" role="option" data-lang="zh-TW" data-ly-id="ly16724">繁體中文</div></div></div></div><div class="fsb-profile-row fsb-marketing-row"><b>Subscribe to exclusive offers</b><div class="fsb-marketing-ctl"><label class="fsb-switch fsb-switch-big"><input type="checkbox" id="fsb-marketing-optin-{{ section.id }}" {% if customer.accepts_marketing %}checked{% endif %}><i></i></label><span class="fsb-mkt-state" id="fsb-mkt-state-{{ section.id }}">{% if customer.accepts_marketing %}On{% else %}Off{% endif %}</span></div></div><p class="fsb-mkt-status" id="fsb-mkt-status-{{ section.id }}"></p><button type="button" class="fsb-logout-btn" id="fsb-logout-btn-{{ section.id }}" data-fsb-logout>Log out</button></section>
       <section class="fsb-account-pane" data-account-pane="orders"><ul class="fsb-list">{% if customer.orders.size > 0 %}{% for order in customer.orders limit: 12 %}<li class="fsb-list-card"><div class="fsb-list-card-top"><strong>{{ order.name }}</strong><span class="fsb-badge fsb-badge-{{ order.fulfillment_status | default: 'unfulfilled' | handleize }}">{{ order.fulfillment_status | default: 'Unfulfilled' | replace: '_', ' ' | capitalize }}</span></div><div class="fsb-list-card-meta">{{ order.created_at | date: "%d %b %Y" }} · {{ order.line_items.size }} item{% if order.line_items.size != 1 %}s{% endif %} · {{ order.total_price | money }}</div><button type="button" class="fsb-list-card-link fsb-od-trigger" data-fsb-od="{{ order.id }}">View details ›</button></li>{% endfor %}{% else %}<li class="fsb-panel-empty">You haven't placed any orders yet.</li>{% endif %}</ul></section>
       <section class="fsb-account-pane" data-account-pane="history"><div id="fsb-account-history-{{ section.id }}"></div></section><section class="fsb-account-pane" data-account-pane="rewards"><div id="fsb-account-rewards-{{ section.id }}"></div></section>
       <section class="fsb-account-pane" data-account-pane="address"><ul class="fsb-list">{% for address in customer.addresses %}<li class="fsb-list-card"><div class="fsb-list-card-top"><strong>Address</strong>{% if address.id == customer.default_address.id %}<span class="fsb-badge fsb-badge-primary">Primary</span>{% endif %}<button type="button" class="fsb-edit-link fsb-edit-address-trigger" data-fsb-edit-address data-address-id="{{ address.id }}" aria-label="Edit address">✎</button></div><div class="fsb-list-card-meta">{{ address.address1 }}{% if address.address2 != blank %}, {{ address.address2 }}{% endif %}
@@ -357,67 +357,106 @@
       </button>
     </div>
     <div class="fsb-panel-body fsb-rl-body">
+      {%- liquid
+        assign current_country_code = localization.country.iso_code
+        assign is_hk = false
+        if current_country_code == 'HK'
+          assign is_hk = true
+        endif
+        assign int_iso = 'US'
+        if localization.available_countries
+          for c in localization.available_countries
+            if c.iso_code != 'HK'
+              assign int_iso = c.iso_code
+              break
+            endif
+          endfor
+        endif
+      -%}
       <div class="fsb-rl-section">
         <div class="fsb-rl-label">Region</div>
         <ul class="fsb-rl-list" id="fsb-region-list-{{ section.id }}">
-          {%- if localization.available_countries and localization.available_countries.size > 0 -%}
-            {%- for country in localization.available_countries -%}
-              <li>
-                <button type="button"
-                        class="fsb-rl-item fsb-region-option {% if country.iso_code == localization.country.iso_code %}is-current{% endif %}"
-                        data-country="{{ country.iso_code }}">
-                  <span class="fsb-rl-text">{{ country.name }}</span>
-                  <span class="fsb-rl-check" aria-hidden="true">
-                    <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                  </span>
-                </button>
-              </li>
-            {%- endfor -%}
-          {%- else -%}
-            <li class="fsb-panel-empty" id="fsb-region-empty-{{ section.id }}">Loading regions…</li>
-          {%- endif -%}
+          <li>
+            <button type="button"
+                    class="fsb-rl-item fsb-region-option {% if is_hk %}is-current{% endif %}"
+                    data-country="HK">
+              <span class="fsb-rl-text">Hong Kong SAR</span>
+              <span class="fsb-rl-check" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+            </button>
+          </li>
+          <li>
+            <button type="button"
+                    class="fsb-rl-item fsb-region-option {% unless is_hk %}is-current{% endunless %}"
+                    data-country="{{ int_iso }}">
+              <span class="fsb-rl-text">International</span>
+              <span class="fsb-rl-check" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+            </button>
+          </li>
         </ul>
       </div>
       <div class="fsb-rl-section">
         <div class="fsb-rl-label">Language</div>
         <ul class="fsb-rl-list" id="fsb-lang-list-{{ section.id }}">
-          {%- if localization.available_languages and localization.available_languages.size > 0 -%}
-            {%- for language in localization.available_languages -%}
-              <li>
-                <button type="button"
-                        class="fsb-rl-item fsb-lang-option {% if language.iso_code == localization.language.iso_code %}is-current{% endif %}"
-                        data-lang="{{ language.iso_code }}">
-                  <span class="fsb-rl-text">{{ language.endonym_name | default: language.name }}</span>
-                  <span class="fsb-rl-check" aria-hidden="true">
-                    <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                  </span>
-                </button>
-              </li>
-            {%- endfor -%}
-          {%- else -%}
-            <li class="fsb-panel-empty" id="fsb-lang-empty-{{ section.id }}">Loading languages…</li>
-          {%- endif -%}
+          {%- assign cur_lang = localization.language.iso_code | downcase -%}
+          <li>
+            <button type="button" class="fsb-rl-item fsb-lang-option {% if cur_lang == 'en' %}is-current{% endif %}" data-lang="en" data-ly-id="ly16719">
+              <span class="fsb-rl-text">English</span>
+              <span class="fsb-rl-check" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="fsb-rl-item fsb-lang-option {% if cur_lang == 'ja' %}is-current{% endif %}" data-lang="ja" data-ly-id="ly16725">
+              <span class="fsb-rl-text">日本語</span>
+              <span class="fsb-rl-check" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="fsb-rl-item fsb-lang-option {% if cur_lang == 'ko' %}is-current{% endif %}" data-lang="ko" data-ly-id="ly16726">
+              <span class="fsb-rl-text">한국어</span>
+              <span class="fsb-rl-check" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="fsb-rl-item fsb-lang-option {% if cur_lang == 'zh-cn' or cur_lang == 'zh-hans' or cur_lang == 'zh' %}is-current{% endif %}" data-lang="zh-CN" data-ly-id="ly16720">
+              <span class="fsb-rl-text">简体中文</span>
+              <span class="fsb-rl-check" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="fsb-rl-item fsb-lang-option {% if cur_lang == 'zh-tw' or cur_lang == 'zh-hant' %}is-current{% endif %}" data-lang="zh-TW" data-ly-id="ly16724">
+              <span class="fsb-rl-text">繁體中文</span>
+              <span class="fsb-rl-check" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </button>
+          </li>
         </ul>
       </div>
       <div class="fsb-rl-hidden-forms" aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;">
         {%- form 'localization', id: 'fsb-country-form-' | append: section.id, class: 'fsb-country-form' -%}
           <input type="hidden" name="return_to" value="{{ request.path }}">
           <select name="country_code" id="fsb-country-select-{{ section.id }}">
+            <option value="HK" {% if is_hk %}selected{% endif %}>Hong Kong SAR</option>
+            <option value="{{ int_iso }}" {% unless is_hk %}selected{% endunless %}>International</option>
             {%- if localization.available_countries -%}
               {%- for country in localization.available_countries -%}
-                <option value="{{ country.iso_code }}" {% if country.iso_code == localization.country.iso_code %}selected{% endif %}>{{ country.name }}</option>
+                {%- unless country.iso_code == 'HK' or country.iso_code == int_iso -%}
+                  <option value="{{ country.iso_code }}">{{ country.name }}</option>
+                {%- endunless -%}
               {%- endfor -%}
             {%- endif -%}
           </select>
         {%- endform -%}
-        {%- form 'localization' -%}
-            <input type="hidden" name="return_to" value="{{ request.path }}">
-            <select name="locale_code" id="fsb-lang-select-{{ section.id }}">
-            {%- if localization.available_languages -%}
-              {%- for language in localization.available_languages -%}
-                <option value="{{ language.iso_code }}" {% if language.iso_code == localization.language.iso_code %}selected{% endif %}>{{ language.endonym_name | default: language.name }}</option>
-              {%- endfor -%}
-            {%- endif -%}
+        {%- form 'localization', id: 'fsb-lang-form-' | append: section.id, class: 'fsb-lang-form' -%}
+          <input type="hidden" name="return_to" value="{{ request.path }}">
+          <select name="locale_code" id="fsb-lang-select-{{ section.id }}">
+            <option value="en" {% if cur_lang == 'en' %}selected{% endif %}>English</option>
+            <option value="ja" {% if cur_lang == 'ja' %}selected{% endif %}>日本語</option>
+            <option value="ko" {% if cur_lang == 'ko' %}selected{% endif %}>한국어</option>
+            <option value="zh-CN" {% if cur_lang == 'zh-cn' or cur_lang == 'zh-hans' or cur_lang == 'zh' %}selected{% endif %}>简体中文</option>
+            <option value="zh-TW" {% if cur_lang == 'zh-tw' or cur_lang == 'zh-hant' %}selected{% endif %}>繁體中文</option>
           </select>
         {%- endform -%}
       </div>
@@ -441,40 +480,87 @@
       </div>
       <ul class="fsb-list fsb-notif-list" id="fsb-notif-list-{{ section.id }}">
         {% assign has_manual_notifs = false %}
-        {%- comment -%} Automatic sale notification {%- endcomment -%}
-        {% if section.settings.enable_sale_notification and section.settings.sale_collection != blank %}
-          {% assign sale_collection = collections[section.settings.sale_collection] %}
-          {% if sale_collection and sale_collection.products_count > 0 %}
-            {% assign max_discount = 0 %}
-            {% for product in sale_collection.products limit: 50 %}
-              {% if product.compare_at_price > product.price %}
-                {% assign this_discount = product.compare_at_price | minus: product.price | times: 100.0 | divided_by: product.compare_at_price | round %}
-                {% if this_discount > max_discount %}
-                  {% assign max_discount = this_discount %}
-                {% endif %}
-              {% endif %}
-            {% endfor %}
-            {% if max_discount > 0 %}
-              {% assign has_manual_notifs = true %}
-              <li class="fsb-list-card fsb-notif-card is-unread" data-notif-id="auto-sale-{{ sale_collection.id }}">
-                <span class="fsb-notif-dot-indicator" aria-hidden="true"></span>
-                <div class="fsb-notif-content">
-                  <div class="fsb-notif-title">
-                    {% if section.settings.sale_badge_label != blank %}<span class="fsb-notif-sale-badge">{{ section.settings.sale_badge_label }}</span>{% endif %}{{ section.settings.sale_title | default: 'Sale is Live!' }}
-                  </div>
-                  <div class="fsb-notif-text">
-                    {% if section.settings.sale_message != blank %}
-                      {{ section.settings.sale_message }}
-                    {% else %}
-                      Up to {{ max_discount }}% off in {{ sale_collection.title }} — while it lasts.
-                    {% endif %}
-                  </div>
-                  <div class="fsb-notif-time">Live now</div>
-                  <a href="{{ sale_collection.url }}" class="fsb-list-card-link">Shop now ›</a>
+
+        {%- comment -%} 1. Automatic Customer Order Updates {%- endcomment -%}
+        {% if customer and customer.orders.size > 0 %}
+          {% for order in customer.orders limit: 3 %}
+            {% assign has_manual_notifs = true %}
+            {% assign fulfillment_label = order.fulfillment_status | default: 'Unfulfilled' | replace: '_', ' ' | capitalize %}
+            <li class="fsb-list-card fsb-notif-card is-unread" data-notif-id="order-update-{{ order.id }}">
+              <span class="fsb-notif-dot-indicator" aria-hidden="true"></span>
+              <div class="fsb-notif-content">
+                <div class="fsb-notif-title">
+                  <span class="fsb-badge fsb-badge-{{ order.fulfillment_status | default: 'unfulfilled' | handleize }}">
+                    {{ fulfillment_label }}
+                  </span>
+                  Order {{ order.name }}
                 </div>
-              </li>
+                <div class="fsb-notif-text">
+                  {% if order.fulfillment_status == 'fulfilled' %}
+                    Your order with {{ order.line_items.size }} item{% if order.line_items.size != 1 %}s{% endif %} totaling {{ order.total_price | money }} has been shipped and is on the way.
+                  {% else %}
+                    Your order with {{ order.line_items.size }} item{% if order.line_items.size != 1 %}s{% endif %} totaling {{ order.total_price | money }} is confirmed and currently being prepared.
+                  {% endif %}
+                </div>
+                <div class="fsb-notif-time">{{ order.created_at | date: "%d %b %Y" }}</div>
+                <button type="button" class="fsb-list-card-link fsb-od-trigger" data-fsb-od="{{ order.id }}">View order details ›</button>
+              </div>
+            </li>
+          {% endfor %}
+        {% endif %}
+
+        {%- comment -%} 2. Automatic Flash Sales (Auto-detected from store on-sale products) {%- endcomment -%}
+        {% assign sale_coll = collections[section.settings.sale_collection] %}
+        {% unless sale_coll and sale_coll.products_count > 0 %}
+          {% assign sale_coll = collections['sale'] | default: collections['all'] %}
+        {% endunless %}
+        {% if sale_coll and sale_coll.products_count > 0 %}
+          {% assign max_discount = 0 %}
+          {% for product in sale_coll.products limit: 30 %}
+            {% if product.compare_at_price > product.price %}
+              {% assign this_discount = product.compare_at_price | minus: product.price | times: 100.0 | divided_by: product.compare_at_price | round %}
+              {% if this_discount > max_discount %}
+                {% assign max_discount = this_discount %}
+              {% endif %}
             {% endif %}
+          {% endfor %}
+          {% if max_discount > 0 %}
+            {% assign has_manual_notifs = true %}
+            <li class="fsb-list-card fsb-notif-card is-unread" data-notif-id="auto-sale-{{ sale_coll.id }}">
+              <span class="fsb-notif-dot-indicator" aria-hidden="true"></span>
+              <div class="fsb-notif-content">
+                <div class="fsb-notif-title">
+                  <span class="fsb-notif-sale-badge">FLASH SALE</span>
+                  {{ sale_coll.title | default: 'Special Sale' }} is Live!
+                </div>
+                <div class="fsb-notif-text">
+                  Save up to {{ max_discount }}% off on on-sale items. Limited time offer!
+                </div>
+                <div class="fsb-notif-time">Live now</div>
+                <a href="{{ sale_coll.url }}" class="fsb-list-card-link">Shop now ›</a>
+              </div>
+            </li>
           {% endif %}
+        {% endif %}
+
+        {%- comment -%} 3. Automatic Shipping & Delivery Announcements (From Shopify Store Policy) {%- endcomment -%}
+        {% if shop.shipping_policy != blank and shop.shipping_policy.body != blank %}
+          {% assign has_manual_notifs = true %}
+          {% assign shipping_snippet = shop.shipping_policy.body | strip_html | truncatewords: 18 %}
+          <li class="fsb-list-card fsb-notif-card is-unread" data-notif-id="shipping-policy-{{ shop.shipping_policy.id | default: 'policy' }}">
+            <span class="fsb-notif-dot-indicator" aria-hidden="true"></span>
+            <div class="fsb-notif-content">
+              <div class="fsb-notif-title">
+                <span class="fsb-notif-sale-badge" style="background:#3a3e46; color:#fff;">DELIVERY NOTICE</span>
+                {{ shop.shipping_policy.title | default: 'Shipping & Delivery Policy' }}
+              </div>
+              <div class="fsb-notif-text">
+                {{ shipping_snippet }}
+              </div>
+              <div class="fsb-notif-time">Store announcement</div>
+              <a href="{{ shop.shipping_policy.url }}" class="fsb-list-card-link">View policy ›</a>
+            </div>
+          </li>
         {% endif %}
       </ul>
       <div id="fsb-notif-app-slot-{{ section.id }}"></div>
