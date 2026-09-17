@@ -582,6 +582,83 @@
       e.preventDefault(); e.stopPropagation(); openPanel('region');
     });
   }
+  overlay.addEventListener('click', function(e){
+    var applyBtn = e.target.closest('[data-fsb-apply-code]');
+    if (applyBtn && !applyBtn.disabled) {
+      e.preventDefault();
+      e.stopPropagation();
+      var code = applyBtn.getAttribute('data-fsb-apply-code');
+      if (code) {
+        bonApplyDiscountCode(code, applyBtn);
+      } else {
+        window.location.href = BON_LY || String(bonSeed.accountUrl || '/account');
+      }
+      return;
+    }
+    var redeemBtn = e.target.closest('[data-fsb-redeem]');
+    if (redeemBtn && !redeemBtn.disabled) {
+      e.preventDefault();
+      e.stopPropagation();
+      var rid = redeemBtn.getAttribute('data-fsb-redeem');
+      if (rid) bonRedeem(rid, redeemBtn, 'rewards');
+      return;
+    }
+    var termsBtn = e.target.closest('[data-fsb-terms]');
+    if (termsBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      var card = termsBtn.closest('.fsb-rw-card');
+      if (card) card.classList.toggle('is-open');
+      return;
+    }
+    var lytabBtn = e.target.closest('[data-fsb-lytab]');
+    if (lytabBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      var tabVal = lytabBtn.getAttribute('data-fsb-lytab');
+      var hostPointsPane = lytabBtn.closest('[data-account-pane="history"]') || lytabBtn.closest('.fsb-panel-points');
+      var scope = hostPointsPane ? 'points' : 'rewards';
+      bonTab[scope] = tabVal;
+      bonRenderPanel(scope);
+      return;
+    }
+    var ddTrigger = e.target.closest('.fsb-lang-dd-trigger');
+    if (ddTrigger) {
+      e.preventDefault();
+      e.stopPropagation();
+      var dd = ddTrigger.closest('.fsb-lang-dropdown');
+      if (dd) {
+        var isOpen = dd.classList.contains('is-open');
+        overlay.querySelectorAll('.fsb-lang-dropdown.is-open').forEach(function(d){ d.classList.remove('is-open'); });
+        if (!isOpen) dd.classList.add('is-open');
+      }
+      return;
+    }
+    var ddItem = e.target.closest('.fsb-lang-dd-item');
+    if (ddItem) {
+      e.preventDefault();
+      e.stopPropagation();
+      var dd = ddItem.closest('.fsb-lang-dropdown');
+      var langCode = ddItem.getAttribute('data-lang');
+      var lyId = ddItem.getAttribute('data-ly-id');
+      var currentLang = '{{ localization.language.iso_code }}';
+      if (dd) {
+        var curText = dd.querySelector('.fsb-lang-dd-current');
+        if (curText) curText.textContent = ddItem.textContent.trim();
+        dd.querySelectorAll('.fsb-lang-dd-item').forEach(function(it){ it.classList.remove('is-selected'); });
+        ddItem.classList.add('is-selected');
+        dd.classList.remove('is-open');
+      }
+      if (langCode && langCode.toLowerCase() !== currentLang.toLowerCase()) {
+        fsbSyncRegionLangPref(false, true);
+        triggerLangifySwitch(langCode, lyId);
+      }
+      return;
+    }
+    if (!e.target.closest('.fsb-lang-dropdown')) {
+      overlay.querySelectorAll('.fsb-lang-dropdown.is-open').forEach(function(d){ d.classList.remove('is-open'); });
+    }
+  });
   /* ============================================================
      ZENDESK SUPPORT CHAT — CONTROLLED FROM THE SIDEBAR (v25)
        1) the default launcher bubble (bottom-right) stays HIDDEN
@@ -934,10 +1011,7 @@
     if (bonSeedEl) bonSeed = JSON.parse(bonSeedEl.textContent) || {};
   } catch (e) { bonSeed = {}; }
 
-  var BON_INITIAL_POINTS = 0;
-  if (bonSeed && bonSeed.points) {
-    BON_INITIAL_POINTS = Number(bonSeed.points) || 0;
-  }
+  var BON_INITIAL_POINTS = bonNum(bonSeed && bonSeed.points);
 
   // Initialize bonState with seed data
   var bonState = {
@@ -951,10 +1025,10 @@
     tierRows:     null,
     tierRowsApi:  null,
     tierRowsRaw:  null,
-    points:       Number(bonSeed.points || 0),
-    pointsKnown:  Number(bonSeed.points || 0) > 0,
-    pointsEarned: Number(bonSeed.pointsEarned || 0),
-    rewardsCount: Number(bonSeed.rewardsCount || 0),
+    points:       bonNum(bonSeed.points),
+    pointsKnown:  bonNum(bonSeed.points) > 0,
+    pointsEarned: bonNum(bonSeed.pointsEarned),
+    rewardsCount: bonNum(bonSeed.rewardsCount),
     tier:         String(bonSeed.tier || ''),
     memberName:   String(bonSeed.customerName || ''),
     memberSince:  String(bonSeed.memberSince || ''),
@@ -977,7 +1051,9 @@
     });
   }
   function bonNum(v){
-    var n = Number(String(v == null ? '' : v).replace(/[^\d.\-]/g, ''));
+    if (typeof v === 'number') return isFinite(v) ? v : 0;
+    var s = String(v == null ? '' : v).replace(/,/g, '').replace(/[^\d.\-]/g, '');
+    var n = parseFloat(s);
     return isFinite(n) ? n : 0;
   }
   function bonFmt(v){ return bonNum(v).toLocaleString('en-US'); }
@@ -1586,8 +1662,8 @@
           var text = (el.textContent || '').trim();
           var numMatch = text.match(/(\d[\d,.]*)/);
           if (numMatch) {
-            var pts = parseFloat(numMatch[1].replace(/,/g, ''));
-            if (pts > 0 && pts < 10000000) {
+            var pts = bonNum(numMatch[1]);
+            if (pts > 0 && pts < 100000000) {
               bonState.points = pts;
               bonState.pointsKnown = true;
               return true;
@@ -1595,8 +1671,8 @@
           }
           var attr = el.getAttribute('data-points') || el.getAttribute('data-bon-points') || el.getAttribute('data-point-balance');
           if (attr) {
-            var pts2 = parseFloat(attr);
-            if (pts2 > 0 && pts2 < 10000000) {
+            var pts2 = bonNum(attr);
+            if (pts2 > 0 && pts2 < 100000000) {
               bonState.points = pts2;
               bonState.pointsKnown = true;
               return true;
@@ -1718,8 +1794,10 @@
   }
 
   /* Coupon card — matches the reward-card reference: big discount head,
-     note line, coupon name, expiry, apply/check icon and a
-     TERMS & CONDITIONS accordion. Used/expired cards are greyed out. */
+     note line, coupon name, expiry, action button and a
+     TERMS & CONDITIONS accordion.
+     Action 2 (Available tab): "Use now" text button (apply to cart & greyed out once applied).
+     Used/expired cards are greyed out with disabled state. */
   function bonRenderCoupon(it, state){
     var big  = bonBigValue(it);
     var cap  = bonItemCaption(it);
@@ -1730,12 +1808,17 @@
     var terms = String(bonPick(it, ['terms_and_conditions','terms','fine_print']) || '') || bonItemDesc(it);
     var inactive = (state !== 'available');
     var btn;
+    var appliedCode = '';
+    try { appliedCode = sessionStorage.getItem('fsb_applied_coupon') || ''; } catch(e){}
+    var isApplied = (!inactive && code && appliedCode && appliedCode.toLowerCase() === code.toLowerCase());
+
     if (inactive){
-      btn = '<button type="button" class="fsb-rw-dl" disabled aria-label="' + (state === 'used' ? 'Used' : 'Expired') + '">'
-          + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg></button>';
+      btn = '<button type="button" class="fsb-rw-use-btn is-applied" disabled aria-label="' + (state === 'used' ? 'Used' : 'Expired') + '">'
+          + (state === 'used' ? 'Used' : 'Expired') + '</button>';
+    } else if (isApplied){
+      btn = '<button type="button" class="fsb-rw-use-btn is-applied" data-fsb-apply-code="' + bonEsc(code) + '" disabled aria-label="Applied">Applied ✓</button>';
     } else {
-      btn = '<button type="button" class="fsb-rw-dl" data-fsb-apply-code="' + bonEsc(code) + '" aria-label="Apply coupon">'
-          + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg></button>';
+      btn = '<button type="button" class="fsb-rw-use-btn" data-fsb-apply-code="' + bonEsc(code) + '" aria-label="Use now">Use now</button>';
     }
     return '<div class="fsb-rw-card' + (inactive ? ' is-inactive' : '') + '">'
       +   '<div class="fsb-rw-head">'
@@ -1755,13 +1838,15 @@
       + '</div>';
   }
 
-  /* Redeem rule card (redeem with points) — same card design. */
+  /* Redeem rule card (Action 1: redeem with points) — Download icon. Only shown when customer has sufficient points. */
   function bonRenderRedeemCard(it){
     var need = bonItemPoints(it);
-    var can  = !need || bonPoints() >= need;
+    var userPoints = bonPoints();
+    if (need && need > userPoints) return ''; // Hide completely if customer does not have enough points
     var big  = bonBigValue(it);
     var note = bonItemDesc(it) || '';
     var title = bonItemTitle(it);
+    var rid = String(bonPick(it, ['id','_id','reward_id','program_id']) || '');
     return '<div class="fsb-rw-card">'
       +   '<div class="fsb-rw-head">'
       +     '<div class="fsb-rw-value">' + bonEsc(big) + '</div>'
@@ -1772,12 +1857,7 @@
       +       '<div class="fsb-rw-name">' + bonEsc(title) + '</div>'
       +       '<div class="fsb-rw-exp">' + (need ? bonFmt(need) + ' points' : '&nbsp;') + '</div>'
       +     '</div>'
-      /* Download icon everywhere — same look as the coupon cards; the click
-         still performs the redeem action via data-fsb-redeem. "REDEEM" text
-         is not shown anymore. */
-      +     '<button type="button" class="fsb-rw-dl" data-fsb-redeem="'
-      +       bonEsc(String(bonPick(it, ['id','_id','reward_id','program_id']) || '')) + '"'
-      +       (can ? '' : ' disabled') + ' aria-label="' + (can ? 'Redeem reward' : 'Not enough points') + '">'
+      +     '<button type="button" class="fsb-rw-dl" data-fsb-redeem="' + bonEsc(rid) + '" aria-label="Redeem reward">'
       +       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>'
       +     '</button>'
       +     '</div>'
@@ -1802,7 +1882,13 @@
       html = x.map(function(r){ return bonRenderCoupon(r, 'expired'); }).join('');
     } else {
       var a = byState('available');
-      var rules = (bonState.redeem || []).filter(function(r){ return r.is_active !== 0; });
+      var userPoints = bonPoints();
+      /* Filter out any reward where required points > customer points */
+      var rules = (bonState.redeem || []).filter(function(r){
+        if (r.is_active === 0) return false;
+        var need = bonItemPoints(r);
+        return !need || need <= userPoints;
+      });
       if (!a.length && !rules.length) return '<div class="fsb-ly-empty">' + (bonState.loaded ? 'No rewards available right now.' : 'Loading available rewards…') + '</div>';
       html = a.map(function(r){ return bonRenderCoupon(r, 'available'); }).join('')
            + rules.map(bonRenderRedeemCard).join('');
@@ -1894,14 +1980,18 @@
 
   function bonRenderPanel(scope) {
     var el = document.getElementById('fsb-' + scope + '-body-' + sid);
-    if (!el) return;
+    var r = document.getElementById('fsb-account-rewards-' + sid);
+    var h = document.getElementById('fsb-account-history-' + sid);
 
     // Try to find points one more time before rendering
     bonFindPoints();
 
     if (!bonState.cid) {
-      el.innerHTML = '<div class="fsb-ly">'
+      var signinHtml = '<div class="fsb-ly">'
         + '<a class="fsb-ly-signin" href="' + bonEsc(bonSeed.loginUrl || '/account/login') + '">Sign in to view your rewards</a></div>';
+      if (el) el.innerHTML = signinHtml;
+      if (scope === 'rewards' && r) r.innerHTML = signinHtml;
+      if (scope === 'points' && h) h.innerHTML = signinHtml;
       return;
     }
 
@@ -1925,15 +2015,26 @@
       hint = '<div class="fsb-ly-note">To show live points, connect the BON API — Theme Settings &gt; "BON Loyalty API base URL".</div>';
     }
 
-    el.innerHTML = '<div class="fsb-ly">'
-      + bonTierCard()
-      + bonPointsCard()
-      + (scope === 'points' ? '' : bonTabs(scope))
-      + listHtml
-      + hint
-      + '</div>';
+    if (el) {
+      el.innerHTML = '<div class="fsb-ly">'
+        + bonTierCard()
+        + bonPointsCard()
+        + (scope === 'points' ? '' : bonTabs(scope))
+        + listHtml
+        + hint
+        + '</div>';
+      bonBindPanel(el, scope);
+    }
 
-    bonBindPanel(el, scope);
+    if (scope === 'rewards' && r) {
+      r.innerHTML = bonTabs('rewards') + bonRewardsInner();
+      bonBindPanel(r, 'rewards');
+    }
+    if (scope === 'points' && h) {
+      h.innerHTML = bonRenderHistory();
+      bonBindPanel(h, 'points');
+    }
+
     updateRewardsBadge();
   }
 
@@ -1979,7 +2080,13 @@
         setTimeout(function(){ btn.textContent = old; }, 1400);
       });
     });
-    el.querySelectorAll('[data-fsb-apply-code]').forEach(function(btn){ btn.addEventListener('click',function(){ var code=btn.getAttribute('data-fsb-apply-code'); if(code) bonApplyDiscountCode(code,btn); else window.location.href = BON_LY || String(bonSeed.accountUrl || '/account'); }); });
+    el.querySelectorAll('[data-fsb-apply-code]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var code = btn.getAttribute('data-fsb-apply-code');
+        if (code) bonApplyDiscountCode(code, btn);
+        else window.location.href = BON_LY || String(bonSeed.accountUrl || '/account');
+      });
+    });
     el.querySelectorAll('[data-fsb-redeem]').forEach(function(btn){
       if (btn.getAttribute('data-fsb-apply-code')) return;
       btn.addEventListener('click', function(){ bonRedeem(btn.getAttribute('data-fsb-redeem'), btn, scope); });
@@ -2028,8 +2135,8 @@
         if (m) raw = m[1];
       }
       if (raw){
-        var n = parseFloat(String(raw).replace(/,/g, ''));
-        if (isFinite(n) && n > 0 && n < 10000000){
+        var n = bonNum(raw);
+        if (n > 0 && n < 100000000){
           bonState.points = n;
           bonState.pointsKnown = true;
           return true;
@@ -2039,10 +2146,7 @@
     return false;
   }
 
-  // Redeeming (creating a discount code) is handled by BON itself on its
-  // loyalty page — the theme cannot mint codes without the app's secret API.
-  // So the button opens the BON loyalty page (if configured) instead of
-  // failing silently against a fake endpoint.
+  // Action 2: Apply discount code to cart & grey out once applied
   function bonApplyDiscountCode(code, btn){
     code = String(code || '').trim();
     if (!code) return false;
@@ -2052,11 +2156,22 @@
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(code);
       else bonFallbackCopy(code);
     } catch(e){ try { bonFallbackCopy(code); } catch(e2){} }
+    try {
+      sessionStorage.setItem('fsb_applied_coupon', code);
+    } catch(e){}
     if (btn){
-      btn.innerHTML = '<span class="fsb-ly-cta-label">✓</span>';
+      btn.textContent = 'Applied ✓';
       btn.classList.add('is-applied');
-      btn.setAttribute('aria-label','Redeemed');
+      btn.setAttribute('aria-label', 'Applied');
       btn.disabled = true;
+    }
+    if (overlay) {
+      overlay.querySelectorAll('[data-fsb-apply-code="' + code.replace(/"/g, '\\"') + '"]').forEach(function(b){
+        b.textContent = 'Applied ✓';
+        b.classList.add('is-applied');
+        b.setAttribute('aria-label', 'Applied');
+        b.disabled = true;
+      });
     }
     window.location.href = '/discount/' + encodeURIComponent(code) + '?redirect=/cart';
     return true;
@@ -2079,18 +2194,24 @@
     return '';
   }
 
+  // Action 1: Redeem reward (Download icon)
   function bonRedeem(id, btn, scope){
     if (!btn || btn.disabled) return;
     var existingCode = btn.getAttribute('data-fsb-reward-code') || '';
     if (existingCode && bonApplyDiscountCode(existingCode, btn)) return;
     var base = String(bonSeed.apiBase || '').trim();
     var oldHtml = btn.innerHTML;
-    btn.classList.add('is-loading'); btn.setAttribute('aria-busy','true');
+    btn.classList.add('is-loading');
+    btn.setAttribute('aria-busy', 'true');
+    btn.disabled = true;
     function bail(){
       /* Redemption via the proxy not possible → send the customer to the BON
          loyalty page (Theme Settings > "BON Loyalty page URL"), never the
          bare account page when a BON page exists. */
-      btn.classList.remove('is-loading'); btn.removeAttribute('aria-busy'); btn.innerHTML = oldHtml;
+      btn.classList.remove('is-loading');
+      btn.removeAttribute('aria-busy');
+      btn.innerHTML = oldHtml;
+      btn.disabled = false;
       var target = BON_LY || String(bonSeed.accountUrl || '/account');
       if (target) window.location.href = target;
     }
@@ -2112,6 +2233,18 @@
           bonSetPoints(d.current_point, true);
           bonWriteCache();
         }
+        var newReward = {
+          coupon_code: code,
+          code: code,
+          status: 'available',
+          title: btn.closest('.fsb-rw-card') ? (btn.closest('.fsb-rw-card').querySelector('.fsb-rw-name') ? btn.closest('.fsb-rw-card').querySelector('.fsb-rw-name').textContent : 'Reward') : 'Reward',
+          discount_type: 'reward'
+        };
+        if (!Array.isArray(bonState.rewards)) bonState.rewards = [];
+        bonState.rewards.unshift(newReward);
+        bonWriteCache();
+        updateRewardsBadge();
+        ['rewards', 'points'].forEach(function(sc){ bonRenderPanel(sc); });
         bonApplyDiscountCode(code, btn);
       })
       .catch(bail);
@@ -2598,11 +2731,150 @@
   var regionInitDone = false;
   var pendingCountry = '{{ localization.country.iso_code }}';
   var pendingLang    = '{{ localization.language.iso_code }}';
+
+  var LANGIFY_LANGS = {
+    'en':    { id: 'ly16719', code: 'en',    name: 'English' },
+    'ja':    { id: 'ly16725', code: 'ja',    name: '日本語' },
+    'ko':    { id: 'ly16726', code: 'ko',    name: '한국어' },
+    'zh-cn': { id: 'ly16720', code: 'zh-CN', name: '简体中文' },
+    'zh-tw': { id: 'ly16724', code: 'zh-TW', name: '繁體中文' }
+  };
+
+  function setLangifyCookiesAndStorage(normCode, targetId) {
+    try {
+      var maxAge = 31536000;
+      var domain = window.location.hostname;
+      var parts = domain.split('.');
+      var rootDomain = parts.length > 1 ? parts.slice(-2).join('.') : domain;
+      var names = ['ly-lang', 'ly_lang', 'langify-lang', 'langify_lang', 'language', 'ly-lang-code', 'ly_lang_code', 'ly-languages-switcher'];
+      
+      names.forEach(function(name){
+        if (targetId) {
+          document.cookie = name + '=' + encodeURIComponent(targetId) + '; path=/; max-age=' + maxAge + '; SameSite=Lax';
+          if (rootDomain && rootDomain !== domain) {
+            document.cookie = name + '=' + encodeURIComponent(targetId) + '; domain=.' + rootDomain + '; path=/; max-age=' + maxAge + '; SameSite=Lax';
+          }
+        }
+        if (name.indexOf('code') !== -1 || !targetId) {
+          document.cookie = name + '=' + encodeURIComponent(normCode) + '; path=/; max-age=' + maxAge + '; SameSite=Lax';
+          if (rootDomain && rootDomain !== domain) {
+            document.cookie = name + '=' + encodeURIComponent(normCode) + '; domain=.' + rootDomain + '; path=/; max-age=' + maxAge + '; SameSite=Lax';
+          }
+        }
+      });
+      
+      if (targetId) {
+        document.cookie = 'ly-lang-id=' + encodeURIComponent(targetId) + '; path=/; max-age=' + maxAge + '; SameSite=Lax';
+        try { localStorage.setItem('ly-lang', targetId); } catch(e){}
+        try { localStorage.setItem('fsb_active_ly_id', targetId); } catch(e){}
+      }
+      try { localStorage.setItem('ly-lang-code', normCode); } catch(e){}
+      try { localStorage.setItem('fsb_active_lang', normCode); } catch(e){}
+      try { sessionStorage.setItem('fsb_active_lang', normCode); } catch(e){}
+    } catch(e){}
+  }
+
+  function triggerLangifySwitch(targetCode, lyId) {
+    if (!targetCode) return false;
+    var normCode = String(targetCode).toLowerCase().replace('_', '-');
+    if (normCode === 'zh' || normCode === 'zh-hans') normCode = 'zh-cn';
+    if (normCode === 'zh-hant') normCode = 'zh-tw';
+    var entry = LANGIFY_LANGS[normCode];
+    var targetId = lyId || (entry && entry.id) || '';
+
+    // 1. Write cookies and localStorage for Langify
+    setLangifyCookiesAndStorage(normCode, targetId);
+
+    // 2. Try native Langify switcher DOM links
+    if (targetId || normCode) {
+      var selectors = [
+        'a[data-language="' + targetId + '"]',
+        'a[data-language-id="' + targetId + '"]',
+        'a[data-lang-id="' + targetId + '"]',
+        'a.ly-languages-switcher-link[data-language="' + targetId + '"]',
+        'a[data-language-code="' + normCode + '"]',
+        'a[data-lang="' + normCode + '"]',
+        'a[hreflang="' + normCode + '"]',
+        '.ly-languages-switcher a[data-language="' + targetId + '"]',
+        '.langify-language-switcher a[data-language="' + targetId + '"]',
+        'a[href*="' + targetId + '"]',
+        'li[data-language="' + targetId + '"] a',
+        '[data-language="' + targetId + '"]'
+      ];
+      for (var i = 0; i < selectors.length; i++) {
+        var el = document.querySelector(selectors[i]);
+        if (el) {
+          try {
+            el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+            if (typeof el.click === 'function') el.click();
+            var href = el.getAttribute('href');
+            if (href && href !== '#' && !href.startsWith('javascript:')) {
+              window.location.href = href;
+            }
+            return true;
+          } catch(e){}
+        }
+      }
+    }
+
+    // 3. Try Langify global JS APIs
+    try {
+      if (window.langify && window.langify.switcher && typeof window.langify.switcher.switchLanguage === 'function') {
+        window.langify.switcher.switchLanguage(targetId || normCode);
+        return true;
+      }
+      if (window.langify && typeof window.langify.switchLanguage === 'function') {
+        window.langify.switchLanguage(targetId || normCode);
+        return true;
+      }
+      if (window.ly && typeof window.ly.switch === 'function') {
+        window.ly.switch(targetId || normCode);
+        return true;
+      }
+      if (window.ly && typeof window.ly.switchLanguage === 'function') {
+        window.ly.switchLanguage(targetId || normCode);
+        return true;
+      }
+    } catch(e){}
+
+    // 4. Try registered Langify map
+    if (window.__fsbLangifyMap && (window.__fsbLangifyMap[normCode] || window.__fsbLangifyMap[targetCode] || window.__fsbLangifyMap[targetId])) {
+      var mappedUrl = window.__fsbLangifyMap[normCode] || window.__fsbLangifyMap[targetCode] || window.__fsbLangifyMap[targetId];
+      if (mappedUrl) {
+        window.location.href = mappedUrl;
+        return true;
+      }
+    }
+
+    // 5. Try finding any link with hreflang or data-language-code
+    var link = document.querySelector('a[hreflang="' + normCode + '"], a[data-language-code="' + normCode + '"], a[data-lang="' + normCode + '"]');
+    if (link && link.href && link.href !== '#' && !link.href.startsWith('javascript:')) {
+      window.location.href = link.href;
+      return true;
+    }
+
+    // 6. Direct URL navigation fallback
+    var pathname = window.location.pathname;
+    var cleanPath = pathname.replace(/^\/(ja|ko|zh-cn|zh-tw|zh-hans|zh-hant|zh|en)(\/|$)/i, '/');
+    if (!cleanPath.startsWith('/')) cleanPath = '/' + cleanPath;
+    var targetPrefix = (normCode === 'en') ? '' : ('/' + (normCode === 'zh-cn' ? 'zh-cn' : normCode === 'zh-tw' ? 'zh-tw' : normCode));
+    var newPath = targetPrefix + (cleanPath === '/' && targetPrefix ? '' : cleanPath);
+    var targetUrl = window.location.origin + newPath + window.location.search + window.location.hash;
+    
+    if (window.location.pathname === newPath) {
+      window.location.reload();
+    } else {
+      window.location.href = targetUrl;
+    }
+    return true;
+  }
+
   function initRegionPanel(){
     if (regionInitDone) return;
     regionInitDone = true;
     var regionList = document.getElementById('fsb-region-list-' + sid);
     var langList   = document.getElementById('fsb-lang-list-' + sid);
+    
     if (regionList) {
       regionList.addEventListener('click', function(e){
         var btn = e.target.closest('.fsb-region-option');
@@ -2613,28 +2885,75 @@
         });
         var sel = document.getElementById('fsb-country-select-' + sid);
         if (sel) sel.value = pendingCountry;
+        
+        // Immediate region apply
+        fsbSyncRegionLangPref(true, false);
+        var countryForm = sel ? sel.closest('form') : null;
+        if (countryForm) {
+          forceNativeSubmit(countryForm);
+        }
       });
     }
+
     if (langList) {
       langList.addEventListener('click', function(e){
         var btn = e.target.closest('.fsb-lang-option');
         if (!btn) return;
         pendingLang = btn.getAttribute('data-lang');
+        var lyId = btn.getAttribute('data-ly-id');
         langList.querySelectorAll('.fsb-lang-option').forEach(function(b){
           b.classList.toggle('is-current', b === btn);
         });
         var sel = document.getElementById('fsb-lang-select-' + sid);
         if (sel) sel.value = pendingLang;
+
+        // Immediate language switch
+        fsbSyncRegionLangPref(false, true);
+        triggerLangifySwitch(pendingLang, lyId);
       });
     }
+
     tryPopulateFromLangify(regionList, langList);
+
     var applyBtn = document.getElementById('fsb-rl-apply-' + sid);
     if (applyBtn) {
       applyBtn.addEventListener('click', function(){
         applyRegionLanguage();
       });
     }
+
+    // Bind custom language dropdown in profile tab
+    var dd = document.getElementById('fsb-lang-dropdown-' + sid);
+    if (dd) {
+      var trigger = dd.querySelector('.fsb-lang-dd-trigger');
+      if (trigger) {
+        trigger.addEventListener('click', function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          dd.classList.toggle('is-open');
+        });
+      }
+      dd.querySelectorAll('.fsb-lang-dd-item').forEach(function(item){
+        item.addEventListener('click', function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          var langCode = item.getAttribute('data-lang');
+          var lyId = item.getAttribute('data-ly-id');
+          var currentLang = '{{ localization.language.iso_code }}';
+          var curText = dd.querySelector('.fsb-lang-dd-current');
+          if (curText) curText.textContent = item.textContent.trim();
+          dd.querySelectorAll('.fsb-lang-dd-item').forEach(function(it){ it.classList.remove('is-selected'); });
+          item.classList.add('is-selected');
+          dd.classList.remove('is-open');
+          if (langCode && langCode.toLowerCase() !== currentLang.toLowerCase()) {
+            fsbSyncRegionLangPref(false, true);
+            triggerLangifySwitch(langCode, lyId);
+          }
+        });
+      });
+    }
   }
+
   function forceNativeSubmit(form){
     if (!form) return false;
     try {
@@ -2644,10 +2963,7 @@
       try { form.submit(); return true; } catch (err2) { return false; }
     }
   }
-  /* Push the chosen region/language to Shopify Admin (customer metafields
-     custom.region / custom.language) via the same GAS proxy used for the
-     marketing toggle. Fire-and-forget with keepalive so it still completes
-     after the page navigates away for the localization form submit. */
+
   function fsbSyncRegionLangPref(countryChanged, langChanged){
     var email = String(bonSeed.customerEmail || '').trim();
     if (!email) return;
@@ -2663,46 +2979,58 @@
       fetch(url, { headers: { 'Accept': 'application/json' }, credentials: 'omit', keepalive: true }).catch(function(){});
     } catch (e) {}
   }
+
   function applyRegionLanguage(){
     var applyBtn = document.getElementById('fsb-rl-apply-' + sid);
     if (applyBtn){ applyBtn.disabled = true; applyBtn.textContent = 'Applying…'; }
-    var countrySel  = document.getElementById('fsb-country-select-' + sid);
-    var langSel     = document.getElementById('fsb-lang-select-' + sid);
-    var countryForm = countrySel ? countrySel.closest('form') : null;
-    var langForm    = langSel ? langSel.closest('form') : null;
     var currentCountry = '{{ localization.country.iso_code }}';
     var currentLang    = '{{ localization.language.iso_code }}';
     var countryChanged = pendingCountry && pendingCountry !== currentCountry;
-    var langChanged    = pendingLang && pendingLang !== currentLang;
+    var langChanged    = pendingLang && pendingLang.toLowerCase() !== currentLang.toLowerCase();
+
     if (!countryChanged && !langChanged) {
       if (applyBtn){ applyBtn.disabled = false; applyBtn.textContent = 'Apply Changes'; }
-      fsbCloseKeepState();
+      fsbCustomerClose();
       return;
     }
-    if (countryChanged && langChanged) {
-      try { sessionStorage.setItem('fsb_pending_lang_' + sid, pendingLang); } catch(e) {}
-    }
+
+    setTimeout(function(){
+      if (applyBtn){ applyBtn.disabled = false; applyBtn.textContent = 'Apply Changes'; }
+    }, 2500);
+
     fsbSyncRegionLangPref(countryChanged, langChanged);
-    var submitted = false;
-    if (countryChanged && countryForm && countrySel) {
-      countrySel.value = pendingCountry;
-      submitted = forceNativeSubmit(countryForm);
-      if (submitted) return;
+
+    if (countryChanged && langChanged) {
+      try {
+        sessionStorage.setItem('fsb_pending_lang_' + sid, pendingLang);
+        setLangifyCookiesAndStorage(pendingLang, (LANGIFY_LANGS[pendingLang.toLowerCase()] || {}).id);
+      } catch(e) {}
+      var countrySel  = document.getElementById('fsb-country-select-' + sid);
+      var countryForm = countrySel ? countrySel.closest('form') : null;
+      if (countryForm && countrySel) {
+        countrySel.value = pendingCountry;
+        if (forceNativeSubmit(countryForm)) return;
+      }
+      triggerLangifySwitch(pendingLang);
+      return;
     }
-    if (!submitted && langChanged && langForm && langSel) {
-      langSel.value = pendingLang;
-      submitted = forceNativeSubmit(langForm);
-      if (submitted) return;
+
+    if (countryChanged) {
+      var countrySel2  = document.getElementById('fsb-country-select-' + sid);
+      var countryForm2 = countrySel2 ? countrySel2.closest('form') : null;
+      if (countryForm2 && countrySel2) {
+        countrySel2.value = pendingCountry;
+        if (forceNativeSubmit(countryForm2)) return;
+      }
+      return;
     }
-    if ((langChanged || countryChanged) && window.__fsbLangifyMap) {
-      var target = window.__fsbLangifyMap[pendingLang] || window.__fsbLangifyMap[pendingCountry];
-      if (target) { window.location.href = target; return; }
+
+    if (langChanged) {
+      triggerLangifySwitch(pendingLang);
+      return;
     }
-    if (applyBtn){ applyBtn.disabled = false; applyBtn.textContent = 'Apply Changes'; }
-    console.error('FSB region/language: could not submit localization form.', {
-      countryForm: countryForm, langForm: langForm, pendingCountry: pendingCountry, pendingLang: pendingLang
-    });
   }
+
   (function resumePendingLanguageChange(){
     try {
       var key = 'fsb_pending_lang_' + sid;
@@ -2710,54 +3038,30 @@
       if (savedLang) {
         sessionStorage.removeItem(key);
         var currentLangNow = '{{ localization.language.iso_code }}';
-        if (savedLang !== currentLangNow) {
-          var langSel  = document.getElementById('fsb-lang-select-' + sid);
-          var langForm = langSel ? langSel.closest('form') : null;
-          if (langForm && langSel) {
-            langSel.value = savedLang;
-            forceNativeSubmit(langForm);
-          }
+        if (savedLang.toLowerCase() !== currentLangNow.toLowerCase()) {
+          setTimeout(function(){
+            triggerLangifySwitch(savedLang);
+          }, 150);
         }
       }
     } catch(e) {}
   })();
+
   function tryPopulateFromLangify(regionList, langList){
     var langSwitcher = document.querySelector(
-      '.langify-language-switcher, .langify--language-switcher, [class*="langify"] [data-language], .lgf-language, #langify-language, .langify_language_switcher'
+      '.langify-language-switcher, .langify--language-switcher, [class*="langify"] [data-language], .lgf-language, #langify-language, .langify_language_switcher, .ly-languages-switcher'
     );
     if (!langSwitcher) return;
     var links = langSwitcher.querySelectorAll('a[href]');
     if (!links.length) return;
     window.__fsbLangifyMap = window.__fsbLangifyMap || {};
-    var langEmpty = document.getElementById('fsb-lang-empty-' + sid);
-    if (langList && (langEmpty || langList.querySelectorAll('.fsb-lang-option').length === 0)) {
-      langList.innerHTML = '';
-      links.forEach(function(a){
-        var code = (a.getAttribute('data-language') || a.getAttribute('hreflang') || a.getAttribute('data-lang') || '').toLowerCase();
-        var label = (a.textContent || '').trim();
-        var href = a.getAttribute('href');
-        if (code) window.__fsbLangifyMap[code] = href;
-        var li = document.createElement('li');
-        var btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'fsb-rl-item fsb-lang-option';
-        if (a.classList.contains('active') || a.getAttribute('aria-current')) {
-          btn.classList.add('is-current');
-        }
-        btn.setAttribute('data-lang', code);
-        btn.setAttribute('data-href', href || '#');
-        btn.innerHTML = '<span class="fsb-rl-text">' + label + '</span>' +
-          '<span class="fsb-rl-check"><svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
-        btn.addEventListener('click', function(){
-          langList.querySelectorAll('.fsb-lang-option').forEach(function(b){ b.classList.remove('is-current'); });
-          btn.classList.add('is-current');
-          pendingLang = code;
-        });
-        li.appendChild(btn);
-        langList.appendChild(li);
-      });
-    }
+    links.forEach(function(a){
+      var code = (a.getAttribute('data-language-code') || a.getAttribute('data-language') || a.getAttribute('hreflang') || a.getAttribute('data-lang') || '').toLowerCase();
+      var href = a.getAttribute('href');
+      if (code && href) window.__fsbLangifyMap[code] = href;
+    });
   }
+
   (function cleanupLegacyRegion(){
     var legacyPopup = document.getElementById('flag-popup-overlay-' + sid);
     if (legacyPopup) legacyPopup.style.display = 'none';
