@@ -2,7 +2,7 @@
 <script type="application/json" id="fsb-bon-data-{{ section.id }}">
 {
   "customerId": {% if customer %}{{ customer.id | json }}{% else %}null{% endif %},
-  "customerName": {% if customer %}{{ customer.name | default: customer.first_name | default: '' | json }}{% else %}""{% endif %},
+  "customerName": {% if customer %}{% if customer.first_name != blank or customer.last_name != blank %}{{ customer.first_name | append: ' ' | append: customer.last_name | strip | json }}{% else %}{{ customer.name | default: '' | json }}{% endif %}{% else %}""{% endif %},
   "customerEmail": {% if customer %}{{ customer.email | json }}{% else %}""{% endif %},
   "klaviyoPublicKey": {{ section.settings.klaviyo_public_key | default: "" | json }},
   "memberSince": {% if customer %}{{ customer.created_at | date: "%Y" | json }}{% else %}""{% endif %},
