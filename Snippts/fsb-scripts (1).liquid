@@ -638,21 +638,8 @@
     if (ddItem) {
       e.preventDefault();
       e.stopPropagation();
-      var dd = ddItem.closest('.fsb-lang-dropdown');
       var langCode = ddItem.getAttribute('data-lang');
-      var lyId = ddItem.getAttribute('data-ly-id');
-      var currentLang = '{{ localization.language.iso_code }}';
-      if (dd) {
-        var curText = dd.querySelector('.fsb-lang-dd-current');
-        if (curText) curText.textContent = ddItem.textContent.trim();
-        dd.querySelectorAll('.fsb-lang-dd-item').forEach(function(it){ it.classList.remove('is-selected'); });
-        ddItem.classList.add('is-selected');
-        dd.classList.remove('is-open');
-      }
-      if (langCode && langCode.toLowerCase() !== currentLang.toLowerCase()) {
-        fsbSyncRegionLangPref(false, true);
-        triggerLangifySwitch(langCode, lyId);
-      }
+      handleCustomerLanguageChange(langCode);
       return;
     }
     if (!e.target.closest('.fsb-lang-dropdown')) {
@@ -2728,144 +2715,281 @@
       menuBack.style.display = 'block';
     });
   }
+  var pendingCountry = null;
+  var pendingLang    = null;
+  var pendingLyId    = null;
   var regionInitDone = false;
-  var pendingCountry = '{{ localization.country.iso_code }}';
-  var pendingLang    = '{{ localization.language.iso_code }}';
 
-  var LANGIFY_LANGS = {
-    'en':    { id: 'ly16719', code: 'en',    name: 'English' },
-    'ja':    { id: 'ly16725', code: 'ja',    name: '日本語' },
-    'ko':    { id: 'ly16726', code: 'ko',    name: '한국어' },
-    'zh-cn': { id: 'ly16720', code: 'zh-CN', name: '简体中文' },
-    'zh-tw': { id: 'ly16724', code: 'zh-TW', name: '繁體中文' }
+  var ALL_LANG_CONFIG = {
+    'en': {
+      code: 'en',
+      lyId: 'ly16719',
+      label: 'English',
+      prefix: '',
+      aliases: ['en', 'en-us', 'en-gb', 'english', 'x-default']
+    },
+    'ja': {
+      code: 'ja',
+      lyId: 'ly16725',
+      label: '日本語',
+      prefix: '/ja',
+      aliases: ['ja', 'ja-jp', 'japanese']
+    },
+    'ko': {
+      code: 'ko',
+      lyId: 'ly16726',
+      label: '한국어',
+      prefix: '/ko',
+      aliases: ['ko', 'ko-kr', 'korean']
+    },
+    'zh-cn': {
+      code: 'zh-CN',
+      lyId: 'ly16720',
+      label: '简体中文',
+      prefix: '/zh-CN',
+      aliases: ['zh-cn', 'zh-hans', 'zh', 'chinese-simplified', 'zh-sg']
+    },
+    'zh-tw': {
+      code: 'zh-TW',
+      lyId: 'ly16724',
+      label: '繁體中文',
+      prefix: '/zh-TW',
+      aliases: ['zh-tw', 'zh-hant', 'zh-hk', 'chinese-traditional']
+    }
   };
 
-  function setLangifyCookiesAndStorage(normCode, targetId) {
+  function normalizeLocaleCode(code) {
+    if (!code) return '';
+    var c = String(code).trim().toLowerCase().replace('_', '-');
+    if (c === 'zh-cn' || c === 'zh-hans' || c === 'zh' || c === 'zh-sg') return 'zh-cn';
+    if (c === 'zh-tw' || c === 'zh-hant' || c === 'zh-hk') return 'zh-tw';
+    if (c === 'ja' || c === 'ja-jp' || c === 'japanese') return 'ja';
+    if (c === 'ko' || c === 'ko-kr' || c === 'korean') return 'ko';
+    if (c === 'en' || c === 'en-us' || c === 'en-gb' || c === 'english') return 'en';
+    return c;
+  }
+
+  function syncProfileRegionDisplay(regionKey) {
+    var isHk = (regionKey === 'HK');
+    var valEl = document.getElementById('fsb-profile-region-val-' + sid);
+    if (valEl) {
+      valEl.textContent = isHk ? 'Hong Kong SAR' : 'International';
+    }
+  }
+
+  /* ------------------------------------------------------------
+     1. CUSTOMER PROFILE LANGUAGE (Membership Drawer)
+     Updates customer.locale + metafields in Shopify Admin backend ONLY via GAS proxy.
+     Does NOT change storefront website language, does NOT reload page.
+     ------------------------------------------------------------ */
+  function handleCustomerLanguageChange(langCode) {
+    if (!langCode) return;
+    var norm = normalizeLocaleCode(langCode);
+    var labels = {
+      'en': 'English',
+      'ja': '日本語',
+      'ko': '한국어',
+      'zh-cn': '简体中文',
+      'zh-tw': '繁體中文'
+    };
+
+    // Update UI trigger label and active checkmark in the custom dropdown
+    var dd = document.getElementById('fsb-lang-dropdown-' + sid);
+    if (dd) {
+      var curText = dd.querySelector('.fsb-lang-dd-current');
+      if (curText) curText.textContent = labels[norm] || 'English';
+      dd.querySelectorAll('.fsb-lang-dd-item').forEach(function(item){
+        var itemLang = normalizeLocaleCode(item.getAttribute('data-lang'));
+        item.classList.toggle('is-selected', itemLang === norm);
+      });
+      dd.classList.remove('is-open');
+    }
+
+    // Send API update to Shopify Admin via GAS proxy (Updates customer.locale in Shopify Admin)
+    var email = String(bonSeed.customerEmail || '').trim();
+    var shopifyId = String(bonSeed.customerId || '').trim();
+    var base = String(bonSeed.apiBase || '').trim();
+    if ((email || shopifyId) && base) {
+      var url = base.replace(/\/+$/, '') + '?action=pref_set'
+        + '&shopify_id=' + encodeURIComponent(shopifyId)
+        + '&email=' + encodeURIComponent(email)
+        + '&language=' + encodeURIComponent(langCode);
+      try {
+        fetch(url, { headers: { 'Accept': 'application/json' }, credentials: 'omit', keepalive: true })
+          .then(function(res){ return res.json(); })
+          .then(function(data){
+            console.log('[FSB] Customer communication language updated in Shopify Admin:', data);
+          })
+          .catch(function(){});
+      } catch(e){}
+    }
+  }
+
+  /* ------------------------------------------------------------
+     2. STOREFRONT REGION & LANGUAGE DRAWER
+     - Language change: changes frontend display language ONLY.
+     - Region change: changes frontend region + syncs backend region + updates Membership drawer.
+     ------------------------------------------------------------ */
+  function setLangifyCookies(normCode, targetId) {
     try {
       var maxAge = 31536000;
       var domain = window.location.hostname;
       var parts = domain.split('.');
       var rootDomain = parts.length > 1 ? parts.slice(-2).join('.') : domain;
-      var names = ['ly-lang', 'ly_lang', 'langify-lang', 'langify_lang', 'language', 'ly-lang-code', 'ly_lang_code', 'ly-languages-switcher'];
-      
-      names.forEach(function(name){
-        if (targetId) {
-          document.cookie = name + '=' + encodeURIComponent(targetId) + '; path=/; max-age=' + maxAge + '; SameSite=Lax';
-          if (rootDomain && rootDomain !== domain) {
-            document.cookie = name + '=' + encodeURIComponent(targetId) + '; domain=.' + rootDomain + '; path=/; max-age=' + maxAge + '; SameSite=Lax';
-          }
+
+      var setCookie = function(k, v) {
+        document.cookie = k + '=' + encodeURIComponent(v) + '; path=/; max-age=' + maxAge + '; SameSite=Lax';
+        if (rootDomain && rootDomain !== domain) {
+          document.cookie = k + '=' + encodeURIComponent(v) + '; domain=.' + rootDomain + '; path=/; max-age=' + maxAge + '; SameSite=Lax';
         }
-        if (name.indexOf('code') !== -1 || !targetId) {
-          document.cookie = name + '=' + encodeURIComponent(normCode) + '; path=/; max-age=' + maxAge + '; SameSite=Lax';
-          if (rootDomain && rootDomain !== domain) {
-            document.cookie = name + '=' + encodeURIComponent(normCode) + '; domain=.' + rootDomain + '; path=/; max-age=' + maxAge + '; SameSite=Lax';
-          }
-        }
-      });
-      
+      };
+
       if (targetId) {
-        document.cookie = 'ly-lang-id=' + encodeURIComponent(targetId) + '; path=/; max-age=' + maxAge + '; SameSite=Lax';
-        try { localStorage.setItem('ly-lang', targetId); } catch(e){}
-        try { localStorage.setItem('fsb_active_ly_id', targetId); } catch(e){}
+        setCookie('ly-lang', targetId);
+        setCookie('langify-lang', targetId);
+        setCookie('ly_lang', targetId);
+        setCookie('ly-lang-id', targetId);
       }
-      try { localStorage.setItem('ly-lang-code', normCode); } catch(e){}
-      try { localStorage.setItem('fsb_active_lang', normCode); } catch(e){}
-      try { sessionStorage.setItem('fsb_active_lang', normCode); } catch(e){}
+      setCookie('ly-lang-code', normCode);
+      setCookie('ly_lang_code', normCode);
+      setCookie('language', normCode);
+      setCookie('ly-lang-selected', '1');
+
+      try {
+        if (targetId) localStorage.setItem('ly-lang', targetId);
+        localStorage.setItem('ly-lang-code', normCode);
+        localStorage.setItem('fsb_store_lang', normCode);
+      } catch(e){}
     } catch(e){}
   }
 
-  function triggerLangifySwitch(targetCode, lyId) {
+  function findHreflangUrl(normCode) {
+    var config = ALL_LANG_CONFIG[normCode];
+    if (!config) return null;
+    var aliases = config.aliases || [normCode];
+
+    var links = document.querySelectorAll('link[rel="alternate"][hreflang]');
+    for (var i = 0; i < links.length; i++) {
+      var link = links[i];
+      var hl = String(link.getAttribute('hreflang') || '').trim().toLowerCase();
+      var href = link.getAttribute('href');
+      if (!href) continue;
+
+      for (var a = 0; a < aliases.length; a++) {
+        if (hl === aliases[a].toLowerCase()) {
+          return href;
+        }
+      }
+    }
+    return null;
+  }
+
+  function getTargetLocaleUrl(targetNormCode) {
+    // 1. First priority: Check <link rel="alternate" hreflang="..."> tag in <head>
+    var hreflangUrl = findHreflangUrl(targetNormCode);
+    if (hreflangUrl) return hreflangUrl;
+
+    // 2. Second priority: Check Shopify localization data
+    var rawPath = window.location.pathname;
+    var cleanPath = rawPath.replace(/^\/(?:en|ja|ko|zh-cn|zh-tw|zh-hans|zh-hant|zh|ja-jp|ko-kr|zh-hk)(?=\/|$)/i, '') || '/';
+    if (!cleanPath.startsWith('/')) cleanPath = '/' + cleanPath;
+
+    var config = ALL_LANG_CONFIG[targetNormCode];
+    var prefix = (config && config.prefix) ? config.prefix : '';
+
+    try {
+      var dataEl = document.getElementById('fsb-localization-data-' + sid);
+      if (dataEl) {
+        var data = JSON.parse(dataEl.textContent);
+        if (data && data.availableLanguages) {
+          for (var i = 0; i < data.availableLanguages.length; i++) {
+            var l = data.availableLanguages[i];
+            if (normalizeLocaleCode(l.isoCode) === targetNormCode && l.rootUrl) {
+              prefix = l.rootUrl.replace(/\/+$/, '');
+              break;
+            }
+          }
+        }
+      }
+    } catch(e){}
+
+    var finalPath = prefix + (cleanPath === '/' ? (prefix ? '' : '/') : cleanPath);
+    if (!finalPath) finalPath = '/';
+    return window.location.origin + finalPath + window.location.search + window.location.hash;
+  }
+
+  function triggerStorefrontLanguageSwitch(targetCode, lyId) {
     if (!targetCode) return false;
-    var normCode = String(targetCode).toLowerCase().replace('_', '-');
-    if (normCode === 'zh' || normCode === 'zh-hans') normCode = 'zh-cn';
-    if (normCode === 'zh-hant') normCode = 'zh-tw';
-    var entry = LANGIFY_LANGS[normCode];
-    var targetId = lyId || (entry && entry.id) || '';
+    var normCode = normalizeLocaleCode(targetCode);
+    var config = ALL_LANG_CONFIG[normCode];
+    var targetId = lyId || (config && config.lyId) || '';
 
-    // 1. Write cookies and localStorage for Langify
-    setLangifyCookiesAndStorage(normCode, targetId);
+    // 1. Set Langify cookies and localStorage
+    setLangifyCookies(normCode, targetId);
 
-    // 2. Try native Langify switcher DOM links
+    // 2. Try registered Langify map from DOM
+    if (window.__fsbLangifyMap && (window.__fsbLangifyMap[normCode] || window.__fsbLangifyMap[targetId])) {
+      var targetHref = window.__fsbLangifyMap[normCode] || window.__fsbLangifyMap[targetId];
+      if (targetHref) {
+        window.location.href = targetHref;
+        return true;
+      }
+    }
+
+    // 3. Try native Langify switcher links in DOM
     if (targetId || normCode) {
       var selectors = [
+        'a.ly-languages-switcher-link[data-language="' + targetId + '"]',
+        'a.ly-custom-dropdown-list-element[data-language="' + targetId + '"]',
         'a[data-language="' + targetId + '"]',
         'a[data-language-id="' + targetId + '"]',
         'a[data-lang-id="' + targetId + '"]',
-        'a.ly-languages-switcher-link[data-language="' + targetId + '"]',
         'a[data-language-code="' + normCode + '"]',
         'a[data-lang="' + normCode + '"]',
         'a[hreflang="' + normCode + '"]',
         '.ly-languages-switcher a[data-language="' + targetId + '"]',
         '.langify-language-switcher a[data-language="' + targetId + '"]',
-        'a[href*="' + targetId + '"]',
-        'li[data-language="' + targetId + '"] a',
-        '[data-language="' + targetId + '"]'
+        '[class*="langify"] a[data-language="' + targetId + '"]'
       ];
       for (var i = 0; i < selectors.length; i++) {
         var el = document.querySelector(selectors[i]);
-        if (el) {
+        if (el && !el.closest('.fsb-side-panel')) {
           try {
             el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
             if (typeof el.click === 'function') el.click();
             var href = el.getAttribute('href');
             if (href && href !== '#' && !href.startsWith('javascript:')) {
               window.location.href = href;
+              return true;
             }
-            return true;
           } catch(e){}
         }
       }
     }
 
-    // 3. Try Langify global JS APIs
+    // 4. Try Langify JS APIs
     try {
       if (window.langify && window.langify.switcher && typeof window.langify.switcher.switchLanguage === 'function') {
         window.langify.switcher.switchLanguage(targetId || normCode);
         return true;
-      }
-      if (window.langify && typeof window.langify.switchLanguage === 'function') {
-        window.langify.switchLanguage(targetId || normCode);
-        return true;
-      }
-      if (window.ly && typeof window.ly.switch === 'function') {
+      } else if (window.ly && typeof window.ly.switch === 'function') {
         window.ly.switch(targetId || normCode);
         return true;
-      }
-      if (window.ly && typeof window.ly.switchLanguage === 'function') {
-        window.ly.switchLanguage(targetId || normCode);
+      } else if (window.langify && typeof window.langify.switchLanguage === 'function') {
+        window.langify.switchLanguage(targetId || normCode);
         return true;
       }
     } catch(e){}
 
-    // 4. Try registered Langify map
-    if (window.__fsbLangifyMap && (window.__fsbLangifyMap[normCode] || window.__fsbLangifyMap[targetCode] || window.__fsbLangifyMap[targetId])) {
-      var mappedUrl = window.__fsbLangifyMap[normCode] || window.__fsbLangifyMap[targetCode] || window.__fsbLangifyMap[targetId];
-      if (mappedUrl) {
-        window.location.href = mappedUrl;
-        return true;
-      }
-    }
-
-    // 5. Try finding any link with hreflang or data-language-code
-    var link = document.querySelector('a[hreflang="' + normCode + '"], a[data-language-code="' + normCode + '"], a[data-lang="' + normCode + '"]');
-    if (link && link.href && link.href !== '#' && !link.href.startsWith('javascript:')) {
-      window.location.href = link.href;
+    // 5. Navigate to calculated localized URL / hreflang URL
+    var destUrl = getTargetLocaleUrl(normCode);
+    if (destUrl) {
+      window.location.href = destUrl;
       return true;
     }
 
-    // 6. Direct URL navigation fallback
-    var pathname = window.location.pathname;
-    var cleanPath = pathname.replace(/^\/(ja|ko|zh-cn|zh-tw|zh-hans|zh-hant|zh|en)(\/|$)/i, '/');
-    if (!cleanPath.startsWith('/')) cleanPath = '/' + cleanPath;
-    var targetPrefix = (normCode === 'en') ? '' : ('/' + (normCode === 'zh-cn' ? 'zh-cn' : normCode === 'zh-tw' ? 'zh-tw' : normCode));
-    var newPath = targetPrefix + (cleanPath === '/' && targetPrefix ? '' : cleanPath);
-    var targetUrl = window.location.origin + newPath + window.location.search + window.location.hash;
-    
-    if (window.location.pathname === newPath) {
-      window.location.reload();
-    } else {
-      window.location.href = targetUrl;
-    }
+    // 6. Reload fallback
+    window.location.reload();
     return true;
   }
 
@@ -2874,24 +2998,33 @@
     regionInitDone = true;
     var regionList = document.getElementById('fsb-region-list-' + sid);
     var langList   = document.getElementById('fsb-lang-list-' + sid);
-    
+
+    var currentCountry = '{{ localization.country.iso_code }}';
+    var savedRegion = '';
+    try { savedRegion = localStorage.getItem('fsb_selected_region') || ''; } catch(e){}
+    var isHk = (savedRegion === 'HK') || (!savedRegion && currentCountry === 'HK');
+
+    syncProfileRegionDisplay(isHk ? 'HK' : 'INT');
+
     if (regionList) {
+      regionList.querySelectorAll('.fsb-region-option').forEach(function(btn){
+        var c = btn.getAttribute('data-country');
+        var shouldBeActive = isHk ? (c === 'HK') : (c !== 'HK');
+        btn.classList.toggle('is-current', shouldBeActive);
+        if (shouldBeActive) pendingCountry = c;
+      });
+
       regionList.addEventListener('click', function(e){
         var btn = e.target.closest('.fsb-region-option');
         if (!btn) return;
-        pendingCountry = btn.getAttribute('data-country');
+        var country = btn.getAttribute('data-country');
+        if (!country) return;
+        pendingCountry = country;
         regionList.querySelectorAll('.fsb-region-option').forEach(function(b){
           b.classList.toggle('is-current', b === btn);
         });
-        var sel = document.getElementById('fsb-country-select-' + sid);
-        if (sel) sel.value = pendingCountry;
-        
-        // Immediate region apply
-        fsbSyncRegionLangPref(true, false);
-        var countryForm = sel ? sel.closest('form') : null;
-        if (countryForm) {
-          forceNativeSubmit(countryForm);
-        }
+        var inp = document.getElementById('fsb-country-input-' + sid);
+        if (inp) inp.value = pendingCountry;
       });
     }
 
@@ -2899,17 +3032,16 @@
       langList.addEventListener('click', function(e){
         var btn = e.target.closest('.fsb-lang-option');
         if (!btn) return;
-        pendingLang = btn.getAttribute('data-lang');
+        var lang = btn.getAttribute('data-lang');
         var lyId = btn.getAttribute('data-ly-id');
+        if (!lang) return;
+        pendingLang = lang;
+        pendingLyId = lyId;
         langList.querySelectorAll('.fsb-lang-option').forEach(function(b){
           b.classList.toggle('is-current', b === btn);
         });
-        var sel = document.getElementById('fsb-lang-select-' + sid);
-        if (sel) sel.value = pendingLang;
-
-        // Immediate language switch
-        fsbSyncRegionLangPref(false, true);
-        triggerLangifySwitch(pendingLang, lyId);
+        var locInp = document.getElementById('fsb-locale-input-' + sid);
+        if (locInp) locInp.value = pendingLang;
       });
     }
 
@@ -2922,7 +3054,7 @@
       });
     }
 
-    // Bind custom language dropdown in profile tab
+    // Bind custom language dropdown in profile tab (Membership drawer)
     var dd = document.getElementById('fsb-lang-dropdown-' + sid);
     if (dd) {
       var trigger = dd.querySelector('.fsb-lang-dd-trigger');
@@ -2938,128 +3070,145 @@
           e.preventDefault();
           e.stopPropagation();
           var langCode = item.getAttribute('data-lang');
-          var lyId = item.getAttribute('data-ly-id');
-          var currentLang = '{{ localization.language.iso_code }}';
-          var curText = dd.querySelector('.fsb-lang-dd-current');
-          if (curText) curText.textContent = item.textContent.trim();
-          dd.querySelectorAll('.fsb-lang-dd-item').forEach(function(it){ it.classList.remove('is-selected'); });
-          item.classList.add('is-selected');
-          dd.classList.remove('is-open');
-          if (langCode && langCode.toLowerCase() !== currentLang.toLowerCase()) {
-            fsbSyncRegionLangPref(false, true);
-            triggerLangifySwitch(langCode, lyId);
+          if (langCode) {
+            handleCustomerLanguageChange(langCode);
           }
         });
       });
     }
   }
 
-  function forceNativeSubmit(form){
-    if (!form) return false;
-    try {
-      HTMLFormElement.prototype.submit.call(form);
-      return true;
-    } catch (err) {
-      try { form.submit(); return true; } catch (err2) { return false; }
-    }
-  }
-
-  function fsbSyncRegionLangPref(countryChanged, langChanged){
-    var email = String(bonSeed.customerEmail || '').trim();
-    if (!email) return;
-    var base = String(bonSeed.apiBase || '').trim();
-    if (!base) return;
-    var args = 'action=pref_set'
-      + '&shopify_id=' + encodeURIComponent(bonSeed.customerId || '')
-      + '&email=' + encodeURIComponent(email);
-    if (langChanged)    args += '&language=' + encodeURIComponent(pendingLang || '');
-    if (countryChanged) args += '&region=' + encodeURIComponent(pendingCountry || '');
-    var url = base.replace(/\/+$/, '') + '?' + args;
-    try {
-      fetch(url, { headers: { 'Accept': 'application/json' }, credentials: 'omit', keepalive: true }).catch(function(){});
-    } catch (e) {}
-  }
-
   function applyRegionLanguage(){
     var applyBtn = document.getElementById('fsb-rl-apply-' + sid);
     if (applyBtn){ applyBtn.disabled = true; applyBtn.textContent = 'Applying…'; }
-    var currentCountry = '{{ localization.country.iso_code }}';
-    var currentLang    = '{{ localization.language.iso_code }}';
-    var countryChanged = pendingCountry && pendingCountry !== currentCountry;
-    var langChanged    = pendingLang && pendingLang.toLowerCase() !== currentLang.toLowerCase();
 
-    if (!countryChanged && !langChanged) {
+    var currentCountry = '{{ localization.country.iso_code }}';
+    var savedRegion = '';
+    try { savedRegion = localStorage.getItem('fsb_selected_region') || ''; } catch(e){}
+    var wasHk = (savedRegion === 'HK') || (!savedRegion && currentCountry === 'HK');
+
+    var targetCountry = pendingCountry || currentCountry;
+    var isTargetHk = (targetCountry === 'HK');
+    var regionChanged = (isTargetHk !== wasHk) || (targetCountry !== currentCountry);
+
+    var currentLangIso = '{{ localization.language.iso_code }}'.toLowerCase();
+    var targetLang = pendingLang || currentLangIso;
+    var langChanged = pendingLang && normalizeLocaleCode(pendingLang) !== normalizeLocaleCode(currentLangIso);
+
+    // Save region preference in localStorage & cookies
+    try {
+      localStorage.setItem('fsb_selected_region', isTargetHk ? 'HK' : 'INT');
+      sessionStorage.setItem('fsb_country', targetCountry);
+      document.cookie = '_shopify_country=' + encodeURIComponent(targetCountry) + '; path=/; max-age=31536000; SameSite=Lax';
+      document.cookie = 'localization_country=' + encodeURIComponent(targetCountry) + '; path=/; max-age=31536000; SameSite=Lax';
+    } catch(e){}
+
+    // Update Profile pane region display immediately in Membership drawer
+    syncProfileRegionDisplay(isTargetHk ? 'HK' : 'INT');
+
+    if (!regionChanged && !langChanged) {
       if (applyBtn){ applyBtn.disabled = false; applyBtn.textContent = 'Apply Changes'; }
       fsbCustomerClose();
       return;
     }
 
-    setTimeout(function(){
-      if (applyBtn){ applyBtn.disabled = false; applyBtn.textContent = 'Apply Changes'; }
-    }, 2500);
+    var normLang = normalizeLocaleCode(targetLang);
+    var config = ALL_LANG_CONFIG[normLang];
+    var lyId = pendingLyId || (config && config.lyId) || '';
 
-    fsbSyncRegionLangPref(countryChanged, langChanged);
+    // Set Langify cookies
+    setLangifyCookies(normLang, lyId);
 
-    if (countryChanged && langChanged) {
+    // Send backend REGION update ONLY (Backend language is NEVER updated from this drawer)
+    var email = String(bonSeed.customerEmail || '').trim();
+    var shopifyId = String(bonSeed.customerId || '').trim();
+    var base = String(bonSeed.apiBase || '').trim();
+    if (regionChanged && (email || shopifyId) && base) {
+      var prefUrl = base.replace(/\/+$/, '') + '?action=pref_set'
+        + '&shopify_id=' + encodeURIComponent(shopifyId)
+        + '&email=' + encodeURIComponent(email)
+        + '&region=' + encodeURIComponent(isTargetHk ? 'HK' : 'International');
       try {
-        sessionStorage.setItem('fsb_pending_lang_' + sid, pendingLang);
-        setLangifyCookiesAndStorage(pendingLang, (LANGIFY_LANGS[pendingLang.toLowerCase()] || {}).id);
-      } catch(e) {}
-      var countrySel  = document.getElementById('fsb-country-select-' + sid);
-      var countryForm = countrySel ? countrySel.closest('form') : null;
-      if (countryForm && countrySel) {
-        countrySel.value = pendingCountry;
-        if (forceNativeSubmit(countryForm)) return;
+        fetch(prefUrl, { headers: { 'Accept': 'application/json' }, credentials: 'omit', keepalive: true }).catch(function(){});
+      } catch(e){}
+    }
+
+    var destUrl = langChanged ? getTargetLocaleUrl(normLang) : (window.location.pathname + window.location.search + window.location.hash);
+
+    // If region changed: submit Shopify native localization form
+    if (regionChanged) {
+      var locForm = document.getElementById('fsb-localization-form-' + sid);
+      var countryInp = document.getElementById('fsb-country-input-' + sid);
+      var localeInp = document.getElementById('fsb-locale-input-' + sid);
+      var returnToInp = document.getElementById('fsb-return-to-' + sid);
+
+      if (countryInp) countryInp.value = targetCountry;
+      if (localeInp) localeInp.value = (config && config.code) ? config.code : targetLang;
+      if (returnToInp) returnToInp.value = destUrl;
+
+      if (locForm) {
+        try {
+          HTMLFormElement.prototype.submit.call(locForm);
+          return;
+        } catch(e) {
+          try {
+            locForm.submit();
+            return;
+          } catch(e2){}
+        }
       }
-      triggerLangifySwitch(pendingLang);
+
+      // Fallback reload / navigate
+      if (langChanged) {
+        triggerStorefrontLanguageSwitch(targetLang, lyId);
+      } else {
+        window.location.reload();
+      }
       return;
     }
 
-    if (countryChanged) {
-      var countrySel2  = document.getElementById('fsb-country-select-' + sid);
-      var countryForm2 = countrySel2 ? countrySel2.closest('form') : null;
-      if (countryForm2 && countrySel2) {
-        countrySel2.value = pendingCountry;
-        if (forceNativeSubmit(countryForm2)) return;
-      }
-      return;
-    }
-
+    // If only language changed
     if (langChanged) {
-      triggerLangifySwitch(pendingLang);
+      triggerStorefrontLanguageSwitch(targetLang, lyId);
       return;
     }
   }
 
-  (function resumePendingLanguageChange(){
+  (function resumePendingLanguageOnLoad(){
     try {
       var key = 'fsb_pending_lang_' + sid;
-      var savedLang = sessionStorage.getItem(key);
-      if (savedLang) {
+      var saved = sessionStorage.getItem(key);
+      if (saved) {
         sessionStorage.removeItem(key);
-        var currentLangNow = '{{ localization.language.iso_code }}';
-        if (savedLang.toLowerCase() !== currentLangNow.toLowerCase()) {
+        var currentLangIso = '{{ localization.language.iso_code }}'.toLowerCase();
+        if (normalizeLocaleCode(saved) !== normalizeLocaleCode(currentLangIso)) {
           setTimeout(function(){
-            triggerLangifySwitch(savedLang);
+            var config = ALL_LANG_CONFIG[normalizeLocaleCode(saved)];
+            triggerStorefrontLanguageSwitch(saved, config ? config.lyId : '');
           }, 150);
         }
       }
-    } catch(e) {}
+    } catch(e){}
   })();
 
   function tryPopulateFromLangify(regionList, langList){
-    var langSwitcher = document.querySelector(
-      '.langify-language-switcher, .langify--language-switcher, [class*="langify"] [data-language], .lgf-language, #langify-language, .langify_language_switcher, .ly-languages-switcher'
-    );
-    if (!langSwitcher) return;
-    var links = langSwitcher.querySelectorAll('a[href]');
-    if (!links.length) return;
-    window.__fsbLangifyMap = window.__fsbLangifyMap || {};
-    links.forEach(function(a){
-      var code = (a.getAttribute('data-language-code') || a.getAttribute('data-language') || a.getAttribute('hreflang') || a.getAttribute('data-lang') || '').toLowerCase();
-      var href = a.getAttribute('href');
-      if (code && href) window.__fsbLangifyMap[code] = href;
-    });
+    var scan = function(){
+      var langSwitcher = document.querySelector(
+        '.langify-language-switcher, .langify--language-switcher, [class*="langify"] [data-language], .lgf-language, #langify-language, .langify_language_switcher, .ly-languages-switcher'
+      );
+      if (!langSwitcher) return;
+      var links = langSwitcher.querySelectorAll('a[href]');
+      if (!links.length) return;
+      window.__fsbLangifyMap = window.__fsbLangifyMap || {};
+      links.forEach(function(a){
+        var code = normalizeLocaleCode(a.getAttribute('data-language-code') || a.getAttribute('data-language') || a.getAttribute('hreflang') || a.getAttribute('data-lang') || '');
+        var href = a.getAttribute('href');
+        if (code && href && href !== '#' && !href.startsWith('javascript:')) window.__fsbLangifyMap[code] = href;
+      });
+    };
+    scan();
+    setTimeout(scan, 800);
+    setTimeout(scan, 2500);
   }
 
   (function cleanupLegacyRegion(){
