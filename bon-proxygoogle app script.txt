@@ -107,6 +107,11 @@ var GROUPS = {
     'redeem_functions{id money_value}' +
   '}}',
 
+  // G4d — Redeem functions: product / variant fields for Free Product rewards (best effort)
+  redeemProduct: 'query Customer($sid: String!){customer(shopify_id:$sid){' +
+    'redeem_functions{id product_id variant_id product_handle}' +
+  '}}',
+
   // G5 — Rewards (verified fields only: code, discount_amount, expired)
   rewards: 'query Customer($sid: String!){customer(shopify_id:$sid){' +
     'rewards{code discount_amount expired discount_code_id}' +
@@ -181,6 +186,12 @@ function doGet(e) {
     return doRedeem(token, shopifyId, email, params.reward_id || params.redeem_id || '');
   }
 
+  /* ---------- DISCOUNT LOOKUP branch ---------- */
+  if (action === 'lookup_discount') {
+    var discInfo = shopifyGetDiscountDetails_(params.code || params.discount_code || '');
+    return json(discInfo || { success: false, error: 'Could not lookup discount' });
+  }
+
   /* ---------- MARKETING OPT-IN branches (v17) ---------- */
   if (action === 'mkt_state') return doMktState(shopifyId, email);
   if (action === 'mkt_set')   return doMktSet(shopifyId, email, params.subscribe);
@@ -241,6 +252,20 @@ function doGet(e) {
       });
     }
   });
+  callGroup('redeemProduct', GROUPS.redeemProduct, function(d) {
+    if (Array.isArray(d.redeem_functions)) {
+      var byId = {};
+      d.redeem_functions.forEach(function(r) { byId[String(r.id)] = r; });
+      redeem.forEach(function(r) {
+        var extra = byId[String(r.id)];
+        if (extra) {
+          if (extra.product_id) r.product_id = extra.product_id;
+          if (extra.variant_id) r.variant_id = extra.variant_id;
+          if (extra.product_handle) r.product_handle = extra.product_handle;
+        }
+      });
+    }
+  });
   callGroup('rewardsDetail', GROUPS.rewardsDetail, function(d) {
     if (Array.isArray(d.rewards)) {
       var byCode = {};
@@ -254,6 +279,20 @@ function doGet(e) {
       });
     }
   });
+  /* Enrich available rewards with product/variant details if they are Free Product rewards */
+  if (Array.isArray(rewards) && rewards.length > 0) {
+    rewards.forEach(function(r) {
+      if (r && r.code && !r.is_used && !r.expired) {
+        var sInfo = shopifyGetDiscountDetails_(r.code);
+        if (sInfo) {
+          if (sInfo.variant_id) r.variant_id = sInfo.variant_id;
+          if (sInfo.product_id) r.product_id = sInfo.product_id;
+          if (sInfo.product_handle) r.product_handle = sInfo.product_handle;
+          if (sInfo.variant_count) r.variant_count = sInfo.variant_count;
+        }
+      }
+    });
+  }
   /* Tier program (v18) — root `tier` query (NOT the customer query), so a
      dedicated fetch is used. Best-effort: if the plan/feature is missing,
      tierData stays null and the theme falls back to its offline snapshot. */
@@ -324,6 +363,21 @@ function doGet(e) {
 
 }
 
+/* ---------- Resolve BON icon URLs to absolute ----------
+   BON's tier_details.icon can be: null, empty, a relative path
+   (/uploads/…), protocol-relative (//cdn.…), or a full URL.
+   This normalises every variant to a usable https:// URL so the
+   theme <img> can load it directly. */
+function resolveBonIconUrl_(icon) {
+  if (!icon) return '';
+  var s = String(icon).trim();
+  if (!s) return '';
+  if (/^https?:\/\//i.test(s)) return s;           // already absolute
+  if (s.indexOf('//') === 0)   return 'https:' + s; // protocol-relative
+  if (s.charAt(0) === '/')     return 'https://app.bonloyalty.com' + s; // relative path
+  return '';                                         // unknown format
+}
+
 /* ---------- VIP TIER PROGRAM fetch (v18) ----------
    Separate from callGroup because the `tier` root query returns
    data.tier (not data.customer). Silent on failure. */
@@ -346,7 +400,16 @@ function fetchTierProgram_(token, shopifyId, debug) {
       return null;
     }
     debug.push({ g: 'tiers', ok: true, msg: 'OK' });
-    return body.data.tier;
+    /* Resolve every tier icon to an absolute URL so the theme can use
+       them directly in <img src>. BON may return relative paths,
+       protocol-relative URLs, or null — resolveBonIconUrl_ handles all. */
+    var td = body.data.tier;
+    if (td && Array.isArray(td.tier_details)) {
+      for (var i = 0; i < td.tier_details.length; i++) {
+        td.tier_details[i].icon = resolveBonIconUrl_(td.tier_details[i].icon);
+      }
+    }
+    return td;
   } catch (err) {
     debug.push({ g: 'tiers', ok: false, msg: String(err && err.message || err) });
     return null;
@@ -421,14 +484,27 @@ function doRedeem(token, shopifyId, email, rewardId) {
   }
   var d = body.data && body.data.createDiscount;
   if (d && d.discount_code) {
+    var discCode = String(d.discount_code);
+    var shopDetails = shopifyGetDiscountDetails_(discCode);
+    var varId = (shopDetails && shopDetails.variant_id) || (rule && rule.variant_id) || d.variant_id || null;
+    var prodId = (shopDetails && shopDetails.product_id) || (rule && rule.product_id) || d.product_id || null;
+    var handle = (shopDetails && shopDetails.product_handle) || (rule && rule.product_handle) || d.product_handle || null;
+    var varCount = (shopDetails && shopDetails.variant_count) || 0;
+
     return json({
       success: true,
-      code: String(d.discount_code),
+      code: discCode,
       discount_value: d.discount_value,
       current_point: d.current_point,
       ends_at: d.ends_at,
       reward_name: d.reward_name,
       reward_id: rewardId,
+      rule: rule || null,
+      redeem_type: rule ? rule.redeem_type : null,
+      product_id: prodId,
+      variant_id: varId,
+      product_handle: handle,
+      variant_count: varCount,
       message: 'Redeemed via createDiscount — code generated by BON.'
     });
   }
@@ -776,20 +852,118 @@ function mktProp_(name) {
 
 /* ---------- Shopify helpers ---------- */
 
-function shopifyFindCustomer_(email, debug) {
+function shopifyFindCustomer_(email, shopifyId, debug) {
   var shop = mktProp_('SHOPIFY_SHOP');
   var tok  = mktProp_('SHOPIFY_ADMIN_TOKEN');
   if (!shop || !tok) { if (debug) debug.push({ shopify: 'SHOPIFY_SHOP / SHOPIFY_ADMIN_TOKEN not configured' }); return null; }
+
+  // 1. Try search / lookup by shopifyId if provided
+  if (shopifyId) {
+    try {
+      var numId = String(shopifyId).replace(/\D/g, '');
+      if (numId) {
+        var respId = UrlFetchApp.fetch(
+          'https://' + shop + '/admin/api/' + SHOPIFY_API_VERSION + '/customers/' + numId + '.json',
+          { method: 'get', headers: { 'X-Shopify-Access-Token': tok }, muteHttpExceptions: true });
+        if (respId.getResponseCode() === 200) {
+          var bId = JSON.parse(respId.getContentText());
+          if (bId && bId.customer) return bId.customer;
+        }
+      }
+    } catch(eId) {
+      if (debug) debug.push({ shopify_id_lookup: String(eId) });
+    }
+  }
+
+  // 2. Try lookup by email
+  if (email) {
+    try {
+      var resp = UrlFetchApp.fetch(
+        'https://' + shop + '/admin/api/' + SHOPIFY_API_VERSION
+          + '/customers/search.json?query=' + encodeURIComponent('email:' + email),
+        { method: 'get', headers: { 'X-Shopify-Access-Token': tok }, muteHttpExceptions: true });
+      var body = JSON.parse(resp.getContentText());
+      if (resp.getResponseCode() === 200 && body.customers && body.customers.length) {
+        return body.customers[0];
+      }
+      if (debug) debug.push({ shopify_search: resp.getResponseCode(), detail: body });
+    } catch(eEmail) {
+      if (debug) debug.push({ shopify_email_search: String(eEmail) });
+    }
+  }
+
+  return null;
+}
+
+function shopifyGetDiscountDetails_(code) {
+  code = String(code || '').trim();
+  if (!code) return null;
+  var shop = mktProp_('SHOPIFY_SHOP');
+  var tok  = mktProp_('SHOPIFY_ADMIN_TOKEN');
+  if (!shop || !tok) return null;
   try {
-    var resp = UrlFetchApp.fetch(
-      'https://' + shop + '/admin/api/' + SHOPIFY_API_VERSION
-        + '/customers/search.json?query=' + encodeURIComponent('email:' + email),
-      { method: 'get', headers: { 'X-Shopify-Access-Token': tok }, muteHttpExceptions: true });
-    var body = JSON.parse(resp.getContentText());
-    if (resp.getResponseCode() !== 200) { if (debug) debug.push({ shopify_search: resp.getResponseCode(), detail: body }); return null; }
-    return (body.customers && body.customers.length) ? body.customers[0] : null;
+    var lookupResp = UrlFetchApp.fetch(
+      'https://' + shop + '/admin/api/' + SHOPIFY_API_VERSION + '/discount_codes/lookup.json?code=' + encodeURIComponent(code),
+      { method: 'get', headers: { 'X-Shopify-Access-Token': tok }, muteHttpExceptions: true }
+    );
+    if (lookupResp.getResponseCode() !== 200) return null;
+    var lookupData = JSON.parse(lookupResp.getContentText());
+    if (!lookupData || !lookupData.discount_code || !lookupData.discount_code.price_rule_id) return null;
+    var prId = lookupData.discount_code.price_rule_id;
+
+    var prResp = UrlFetchApp.fetch(
+      'https://' + shop + '/admin/api/' + SHOPIFY_API_VERSION + '/price_rules/' + prId + '.json',
+      { method: 'get', headers: { 'X-Shopify-Access-Token': tok }, muteHttpExceptions: true }
+    );
+    if (prResp.getResponseCode() !== 200) return null;
+    var prData = JSON.parse(prResp.getContentText());
+    if (!prData || !prData.price_rule) return null;
+    var pr = prData.price_rule;
+
+    var variantId = null;
+    var productId = null;
+    if (Array.isArray(pr.entitled_variant_ids) && pr.entitled_variant_ids.length > 0) {
+      variantId = pr.entitled_variant_ids[0];
+    }
+    if (Array.isArray(pr.entitled_product_ids) && pr.entitled_product_ids.length > 0) {
+      productId = pr.entitled_product_ids[0];
+    }
+
+    var handle = null;
+    var variantCount = 0;
+    if (productId || variantId) {
+      var prodFetchId = productId;
+      if (prodFetchId) {
+        var pResp = UrlFetchApp.fetch(
+          'https://' + shop + '/admin/api/' + SHOPIFY_API_VERSION + '/products/' + prodFetchId + '.json?fields=id,handle,variants',
+          { method: 'get', headers: { 'X-Shopify-Access-Token': tok }, muteHttpExceptions: true }
+        );
+        if (pResp.getResponseCode() === 200) {
+          var pData = JSON.parse(pResp.getContentText());
+          if (pData && pData.product) {
+            handle = pData.product.handle;
+            var vars = pData.product.variants || [];
+            variantCount = vars.length;
+            if (!variantId && vars.length === 1) {
+              variantId = vars[0].id;
+            }
+          }
+        }
+      }
+    }
+
+    return {
+      success: true,
+      code: code,
+      price_rule_id: prId,
+      value_type: pr.value_type,
+      value: pr.value,
+      variant_id: variantId,
+      product_id: productId,
+      product_handle: handle,
+      variant_count: variantCount
+    };
   } catch (err) {
-    if (debug) debug.push({ shopify_search: String(err) });
     return null;
   }
 }
@@ -799,7 +973,6 @@ function shopifySetMarketing_(email, subscribe, debug) {
   var tok  = mktProp_('SHOPIFY_ADMIN_TOKEN');
   if (!shop || !tok) return { ok: 'skipped', reason: 'SHOPIFY_SHOP / SHOPIFY_ADMIN_TOKEN not configured' };
   var cust = shopifyFindCustomer_(email, debug);
-  if (!cust) return { ok: false, reason: 'Customer not found in Shopify for ' + email };
   var wantState = subscribe ? 'SUBSCRIBED' : 'UNSUBSCRIBED';
   /* ---- Preferred: dedicated consent mutation (GraphQL). It touches ONLY
      the marketing consent — unlike the REST customer PUT, which updates the
@@ -1000,14 +1173,61 @@ function shopifySetCustomerPrefs_(email, language, region, debug) {
   var cust = shopifyFindCustomer_(email, debug);
   if (!cust) return { ok: false, reason: 'Customer not found in Shopify for ' + email };
 
-  var metafields = [];
+  /* Normalize language code for Shopify customer locale */
+  var normLang = '';
   if (language) {
+    var l = String(language).trim().toLowerCase();
+    if (l === 'zh-cn' || l === 'zh-hans' || l === 'zh') normLang = 'zh-CN';
+    else if (l === 'zh-tw' || l === 'zh-hant') normLang = 'zh-TW';
+    else if (l === 'ja') normLang = 'ja';
+    else if (l === 'ko') normLang = 'ko';
+    else if (l === 'en') normLang = 'en';
+    else normLang = language;
+  }
+
+  /* 1. Update Customer's contact information Language (customer.locale) */
+  if (normLang) {
+    try {
+      var CUST_MUT = 'mutation C($input: CustomerInput!){ customerUpdate(input: $input){ customer{ id locale } userErrors{ field message } } }';
+      var custResp = UrlFetchApp.fetch(
+        'https://' + shop + '/admin/api/' + SHOPIFY_API_VERSION + '/graphql.json',
+        {
+          method: 'post',
+          contentType: 'application/json',
+          headers: { 'X-Shopify-Access-Token': tok },
+          payload: JSON.stringify({ query: CUST_MUT, variables: { input: { id: 'gid://shopify/Customer/' + cust.id, locale: normLang } } }),
+          muteHttpExceptions: true
+        });
+      var custBody = JSON.parse(custResp.getContentText());
+      var cu = custBody && custBody.data && custBody.data.customerUpdate;
+      if (cu && cu.userErrors && cu.userErrors.length && debug) {
+        debug.push({ locale_update_error: cu.userErrors[0].message });
+      }
+    } catch(errLocale) {
+      // REST fallback for customer locale
+      try {
+        UrlFetchApp.fetch(
+          'https://' + shop + '/admin/api/' + SHOPIFY_API_VERSION + '/customers/' + cust.id + '.json',
+          {
+            method: 'put',
+            contentType: 'application/json',
+            headers: { 'X-Shopify-Access-Token': tok },
+            payload: JSON.stringify({ customer: { id: cust.id, locale: normLang } }),
+            muteHttpExceptions: true
+          });
+      } catch(e){}
+    }
+  }
+
+  /* 2. Update metafields (custom.language and custom.region) */
+  var metafields = [];
+  if (normLang || language) {
     metafields.push({
       ownerId: 'gid://shopify/Customer/' + cust.id,
       namespace: 'custom',
       key: 'language',
       type: 'single_line_text_field',
-      value: language
+      value: normLang || language
     });
   }
   if (region) {
@@ -1019,10 +1239,9 @@ function shopifySetCustomerPrefs_(email, language, region, debug) {
       value: region
     });
   }
-  if (!metafields.length) return { ok: false, reason: 'Nothing to update' };
+  if (!metafields.length && !normLang) return { ok: false, reason: 'Nothing to update' };
 
-  /* ---- Preferred: metafieldsSet (GraphQL, touches ONLY the metafields
-     listed, same principle as the dedicated marketing-consent mutation). */
+  /* ---- Preferred: metafieldsSet (GraphQL) ---- */
   try {
     var MUT = 'mutation M($metafields: [MetafieldsSetInput!]!)'
       + '{metafieldsSet(metafields:$metafields){'
@@ -1039,18 +1258,18 @@ function shopifySetCustomerPrefs_(email, language, region, debug) {
     var body = JSON.parse(resp.getContentText());
     var ms = body && body.data && body.data.metafieldsSet;
     if (ms && (!ms.userErrors || !ms.userErrors.length) && ms.metafields && ms.metafields.length) {
-      return { ok: true, metafields: ms.metafields, via: 'graphql' };
+      return { ok: true, locale: normLang, metafields: ms.metafields, via: 'graphql' };
     }
     if (debug) debug.push({ shopify_graphql: ms && ms.userErrors && ms.userErrors.length ? ms.userErrors[0].message : (body && body.errors && body.errors.length ? body.errors[0].message : 'no data') });
   } catch (err) {
     if (debug) debug.push({ shopify_graphql: String(err) });
   }
 
-  /* ---- Fallback: REST metafields endpoint, one call per field. ---- */
+  /* ---- Fallback: REST metafields endpoint ---- */
   try {
     var allOk = true;
     var restResults = [];
-    [{ key: 'language', value: language }, { key: 'region', value: region }].forEach(function(f) {
+    [{ key: 'language', value: normLang || language }, { key: 'region', value: region }].forEach(function(f) {
       if (!f.value) return;
       var resp2 = UrlFetchApp.fetch(
         'https://' + shop + '/admin/api/' + SHOPIFY_API_VERSION + '/customers/' + cust.id + '/metafields.json',
@@ -1071,7 +1290,7 @@ function shopifySetCustomerPrefs_(email, language, region, debug) {
       if (!ok2) allOk = false;
       restResults.push({ key: f.key, http: code2 });
     });
-    return { ok: allOk, results: restResults, via: 'rest' };
+    return { ok: allOk, locale: normLang, results: restResults, via: 'rest' };
   } catch (err2) {
     return { ok: false, reason: String(err2) };
   }
