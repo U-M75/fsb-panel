@@ -589,7 +589,7 @@
       e.stopPropagation();
       var code = applyBtn.getAttribute('data-fsb-apply-code');
       if (code) {
-        bonApplyDiscountCode(code, applyBtn);
+        bonApplyDiscountCode(code, applyBtn, bonGiftFromButton(applyBtn));
       } else {
         window.location.href = BON_LY || String(bonSeed.accountUrl || '/account');
       }
@@ -1793,19 +1793,21 @@
     var name = String(bonPick(it, ['coupon_name','reward_name','label','title','name']) || '') || code || 'Coupon';
     var exp  = bonFmtDate(bonPick(it, ['expires_at','expiry_date','expired_at','end_date','ends_at','valid_until','expires']), 'dmy');
     var terms = String(bonPick(it, ['terms_and_conditions','terms','fine_print']) || '') || bonItemDesc(it);
+    var gift = bonGiftFromReward(it);
+    var giftAttr = gift ? ' data-fsb-gift="' + bonEsc(JSON.stringify(gift)) + '"' : '';
     var inactive = (state !== 'available');
     var btn;
     var appliedCode = '';
-    try { appliedCode = sessionStorage.getItem('fsb_applied_coupon') || ''; } catch(e){}
+    try { appliedCode = sessionStorage.getItem('fsb_applied_coupon_v2') || ''; } catch(e){}
     var isApplied = (!inactive && code && appliedCode && appliedCode.toLowerCase() === code.toLowerCase());
 
     if (inactive){
       btn = '<button type="button" class="fsb-rw-use-btn is-applied" disabled aria-label="' + (state === 'used' ? 'Used' : 'Expired') + '">'
           + (state === 'used' ? 'Used' : 'Expired') + '</button>';
     } else if (isApplied){
-      btn = '<button type="button" class="fsb-rw-use-btn is-applied" data-fsb-apply-code="' + bonEsc(code) + '" disabled aria-label="Applied">Applied ✓</button>';
+      btn = '<button type="button" class="fsb-rw-use-btn is-applied" data-fsb-apply-code="' + bonEsc(code) + '"' + giftAttr + ' disabled aria-label="Applied">Applied ✓</button>';
     } else {
-      btn = '<button type="button" class="fsb-rw-use-btn" data-fsb-apply-code="' + bonEsc(code) + '" aria-label="Use now">Use now</button>';
+      btn = '<button type="button" class="fsb-rw-use-btn" data-fsb-apply-code="' + bonEsc(code) + '"' + giftAttr + ' aria-label="Use now">Use now</button>';
     }
     return '<div class="fsb-rw-card' + (inactive ? ' is-inactive' : '') + '">'
       +   '<div class="fsb-rw-head">'
@@ -2040,12 +2042,6 @@
 
   function bonBindPanel(el, scope){
     el.querySelectorAll('.fsb-history-tabs button').forEach(function(btn){ btn.addEventListener('click',function(){ var wrap=btn.parentNode; wrap.querySelectorAll('button').forEach(function(b){b.classList.remove('is-active');}); btn.classList.add('is-active'); var filter=(btn.textContent||'ALL').toLowerCase(); var table=wrap.parentNode.querySelector('.fsb-ly-tbl'); if(table)table.querySelectorAll('tbody tr').forEach(function(row){row.style.display=(filter==='all'||row.getAttribute('data-history-kind')===filter)?'':'none';}); }); });
-    el.querySelectorAll('[data-fsb-terms]').forEach(function(btn){
-      btn.addEventListener('click', function(){
-        var card = btn.closest('.fsb-rw-card');
-        if (card) card.classList.toggle('is-open');
-      });
-    });
     el.querySelectorAll('[data-fsb-lytab]').forEach(function(btn){
       btn.addEventListener('click', function(){
         bonTab[scope] = btn.getAttribute('data-fsb-lytab');
@@ -2070,7 +2066,7 @@
     el.querySelectorAll('[data-fsb-apply-code]').forEach(function(btn){
       btn.addEventListener('click', function(){
         var code = btn.getAttribute('data-fsb-apply-code');
-        if (code) bonApplyDiscountCode(code, btn);
+        if (code) bonApplyDiscountCode(code, btn, bonGiftFromButton(btn));
         else window.location.href = BON_LY || String(bonSeed.accountUrl || '/account');
       });
     });
@@ -2133,34 +2129,316 @@
     return false;
   }
 
-  // Action 2: Apply discount code to cart & grey out once applied
-  function bonApplyDiscountCode(code, btn){
+  /* -----------------------------------------------------------------
+     FREE-PRODUCT REWARDS
+     Shopify's /discount/<code> URL applies a discount code only. It does
+     not add the entitled product to the cart. For a BON free gift we add
+     its exact Shopify variant first, then apply the generated BON code.
+     Normal coupon behavior remains unchanged.
+     ----------------------------------------------------------------- */
+  function bonShopifyVariantId(value){
+    var raw = String(value == null ? '' : value).trim();
+    var gid = raw.match(/gid:\/\/shopify\/ProductVariant\/(\d+)/i);
+    if (gid) return gid[1];
+    return /^\d+$/.test(raw) ? raw : '';
+  }
+  function bonGiftFromReward(it){
+    if (!it || typeof it !== 'object') return null;
+    var variantId = it.variant_id || it.variantId || '';
+    var handle = it.product_handle || it.productHandle || '';
+    var productUrl = it.product_url || it.productUrl || '';
+    var quantity = Math.floor(bonNum(it.quantity || it.gift_quantity || 1));
+    if (quantity < 1) quantity = 1;
+    if (!variantId && !handle && !productUrl) return null;
+    return {
+      variant_id: variantId,
+      product_handle: handle,
+      product_url: productUrl,
+      quantity: quantity
+    };
+  }
+  function bonGiftFromRedeemResponse(data){
+    if (!data || typeof data !== 'object') return null;
+    return bonGiftFromReward((data.gift && typeof data.gift === 'object') ? data.gift : data);
+  }
+  function bonGiftFromButton(btn){
+    if (!btn) return null;
+    try {
+      var raw = btn.getAttribute('data-fsb-gift') || '';
+      return raw ? bonGiftFromReward(JSON.parse(raw)) : null;
+    } catch(e){ return null; }
+  }
+  function bonGiftHandle(gift){
+    var handle = String((gift && gift.product_handle) || '').trim();
+    if (handle) return handle.replace(/^\/+|\/+$/g, '');
+    var url = String((gift && gift.product_url) || '').trim();
+    var m = url.match(/\/products\/([^\/?#]+)/i);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+  function bonResolveGiftVariant(gift){
+    var direct = bonShopifyVariantId(gift && gift.variant_id);
+    if (direct) return Promise.resolve(direct);
+    var handle = bonGiftHandle(gift);
+    if (!handle) return Promise.resolve('');
+    return fetch('/products/' + encodeURIComponent(handle) + '.js', {
+      headers: { 'Accept': 'application/json' },
+      credentials: 'same-origin'
+    }).then(function(r){
+      if (!r.ok) throw new Error('Gift product lookup failed (' + r.status + ')');
+      return r.json();
+    }).then(function(product){
+      var variants = product && Array.isArray(product.variants) ? product.variants : [];
+      /* Never intentionally add an unavailable product variant. */
+      var variant = variants.filter(function(v){ return v && v.available !== false; })[0] || null;
+      return variant && variant.id ? String(variant.id) : '';
+    });
+  }
+  function bonAddGiftToCart(variantId, quantity){
+    return fetch(bonCartEndpoint('cart/add.js'), {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        items: [{ id: variantId, quantity: Math.max(1, Math.floor(bonNum(quantity) || 1)) }]
+      })
+    }).then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(data){
+        if (!r.ok) {
+          throw new Error((data && (data.description || data.message)) || ('Cart add failed (' + r.status + ')'));
+        }
+        return data;
+      });
+    });
+  }
+  /* Discount allocation fingerprint used to verify that Shopify accepted a BON reward code. */
+  function bonCartDiscountFingerprint(cart){
+    var out = [];
+    function add(app, amount){
+      if (!app && !amount) return;
+      var title = app && (app.title || app.code || (app.discount_application && (app.discount_application.title || app.discount_application.code))) || '';
+      var value = amount;
+      if (value === undefined || value === null || value === '') {
+        value = app && (app.total_allocated_amount || app.amount || app.value || 0);
+      }
+      out.push(String(title) + '|' + String(value));
+    }
+    (cart && cart.cart_level_discount_applications || []).forEach(function(app){
+      add(app, app && (app.total_allocated_amount || app.total_allocated_amount_set && app.total_allocated_amount_set.shop_money && app.total_allocated_amount_set.shop_money.amount));
+    });
+    (cart && cart.items || []).forEach(function(item){
+      /* Shopify Ajax Cart response calls this line_level_discount_allocations.
+         Keep older aliases as fallbacks for theme/app-modified cart JSON. */
+      var allocations = item.line_level_discount_allocations || item.discount_allocations || item.discounts || [];
+      allocations.forEach(function(allocation){
+        add(allocation.discount_application || allocation, allocation.amount || allocation.discounted_amount || allocation.total_allocated_amount);
+      });
+    });
+    return out.sort().join('||');
+  }
+  function bonCartDiscountTotal(cart){
+    var direct = Number(cart && cart.total_discount || 0);
+    if (direct > 0) return direct;
+    var total = 0;
+    (cart && cart.items || []).forEach(function(item){
+      var allocations = item.line_level_discount_allocations || item.discount_allocations || item.discounts || [];
+      allocations.forEach(function(a){ total += Number(a.amount || a.discounted_amount || a.total_allocated_amount || 0); });
+    });
+    return total;
+  }
+  function bonCartContainsCode(cart, code){
+    var wanted = String(code || '').trim().toUpperCase();
+    if (!wanted) return false;
+    var codes = Array.isArray(cart && cart.discount_codes) ? cart.discount_codes : [];
+    for (var i = 0; i < codes.length; i++) {
+      var row = codes[i];
+      var actual = String((row && typeof row === 'object') ? (row.code || row.title || '') : row || '').trim().toUpperCase();
+      if (actual === wanted && (!row || typeof row !== 'object' || row.applicable !== false)) return true;
+    }
+    var found = false;
+    function inspect(app){
+      var actual = String(app && (app.title || app.code || (app.discount_application && (app.discount_application.title || app.discount_application.code))) || '').trim().toUpperCase();
+      if (actual === wanted) found = true;
+    }
+    (cart && cart.cart_level_discount_applications || []).forEach(inspect);
+    (cart && cart.items || []).forEach(function(item){
+      var allocations = item.line_level_discount_allocations || item.discount_allocations || item.discounts || [];
+      allocations.forEach(function(a){ inspect(a.discount_application || a); });
+    });
+    return found;
+  }
+  function bonReadCartForCoupon(){
+    return fetch(bonCartEndpoint('cart.js'), { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+      .then(function(r){
+        if (!r.ok) throw new Error('cart ' + r.status);
+        return r.json();
+      });
+  }
+  function bonStorefrontRoot(){
+    var root = (window.Shopify && window.Shopify.routes && window.Shopify.routes.root) || '/';
+    root = String(root || '/');
+    return root.charAt(root.length - 1) === '/' ? root : (root + '/');
+  }
+  function bonCartEndpoint(path){
+    return bonStorefrontRoot() + String(path || '').replace(/^\/+/, '');
+  }
+  function bonCartHasAppliedDiscount(cart, code, baseline){
+    var before = baseline && typeof baseline === 'object' ? baseline : { fingerprint: String(baseline || ''), total: 0 };
+    if (bonCartContainsCode(cart, code)) return true;
+    var afterTotal = bonCartDiscountTotal(cart);
+    var beforeTotal = Number(before.total || 0);
+    if (afterTotal > beforeTotal) return true;
+    /* Fallback for carts that expose an allocation but omit total_discount. */
+    var after = bonCartDiscountFingerprint(cart);
+    return !!(after && after !== String(before.fingerprint || '') && afterTotal > 0);
+  }
+  function bonSetApplyingButton(btn){
+    if (!btn) return;
+    btn.classList.remove('is-applied');
+    btn.classList.add('is-loading');
+    btn.setAttribute('aria-busy', 'true');
+    btn.setAttribute('aria-label', 'Applying reward');
+    btn.disabled = true;
+    if (!btn.querySelector('svg')) btn.textContent = 'Applying…';
+  }
+  /* Shopify's supported Ajax Cart API method. This applies the code to the
+     real cart directly instead of merely setting an unverified /discount URL
+     session, and returns the updated cart for immediate verification. */
+  function bonRememberAndApplyDiscount(code, btn){
+    bonSetApplyingButton(btn);
+    bonReadCartForCoupon().then(function(beforeCart){
+      var baseline = { fingerprint: bonCartDiscountFingerprint(beforeCart), total: bonCartDiscountTotal(beforeCart) };
+      return fetch(bonCartEndpoint('cart/update.js'), {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({ discount: code })
+      }).then(function(r){
+        return r.json().catch(function(){ return {}; }).then(function(cart){
+          if (!r.ok) throw new Error('Discount request failed (' + r.status + ')');
+          if (!bonCartHasAppliedDiscount(cart, code, baseline)) {
+            throw new Error('Shopify did not accept this discount for the current cart');
+          }
+          return cart;
+        });
+      });
+    }).then(function(cart){
+      try { sessionStorage.setItem('fsb_applied_coupon_v2', code); } catch(e){}
+      try {
+        sessionStorage.removeItem('fsb_pending_coupon_v2');
+        sessionStorage.removeItem('fsb_applied_coupon');
+      } catch(e2){}
+      updateCartCount();
+      document.dispatchEvent(new CustomEvent('cart:updated', { detail: { cart: cart, source: 'fsb-bon' } }));
+      bonRefreshCouponViews();
+      /* Preserve the existing customer journey: show the actual updated cart,
+         not a page refresh that only *looks* like a code was applied. */
+      window.location.href = bonCartEndpoint('cart');
+    }).catch(function(err){
+      console.error('[FSB] Shopify rejected BON discount:', err);
+      bonRestoreGiftButton(btn);
+      window.alert('This reward code could not be applied to the current cart. Please check the reward conditions or contact support.');
+    });
+  }
+  function bonLookupGiftForCode(code){
+    var base = String(bonSeed.apiBase || '').trim();
+    if (!base || !bonState.cid) return Promise.resolve(null);
+    var sep = (base.indexOf('/exec') !== -1) ? '?' : '/customer?';
+    var url = base.replace(/\/+$/, '') + sep
+      + 'action=lookup_discount'
+      + '&shopify_id=' + encodeURIComponent(bonState.cid)
+      + '&email=' + encodeURIComponent(bonState.email || '')
+      + '&code=' + encodeURIComponent(code);
+    return fetch(url, { headers: { 'Accept': 'application/json' }, credentials: 'omit' })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .catch(function(){ return null; });
+  }
+  function bonRefreshCouponViews(){
+    ['points', 'rewards'].forEach(function(scope){
+      var el = document.getElementById('fsb-' + scope + '-body-' + sid);
+      if (el && el.innerHTML && typeof bonRenderPanel === 'function') bonRenderPanel(scope);
+    });
+  }
+  /* Diagnostic only — in DevTools run fsbBonCouponDebug('YOUR-CODE') and
+     send its console output if Shopify still says a particular code is not
+     applicable. It does not modify the cart. */
+  window.fsbBonCouponDebug = function(code){
+    return Promise.all([bonLookupGiftForCode(code), bonReadCartForCoupon()]).then(function(result){
+      var out = {
+        code: String(code || ''),
+        giftLookup: result[0],
+        cartDiscountCodes: result[1] && result[1].discount_codes,
+        cartLevelDiscounts: result[1] && result[1].cart_level_discount_applications,
+        totalDiscount: bonCartDiscountTotal(result[1]),
+        cart: result[1]
+      };
+      console.log('[FSB] BON coupon diagnostic', out);
+      return out;
+    });
+  };
+  function bonSetGiftButtonBusy(btn, label){
+    if (!btn) return;
+    if (!btn.hasAttribute('data-fsb-before-gift-html')) {
+      btn.setAttribute('data-fsb-before-gift-html', btn.innerHTML);
+      btn.setAttribute('data-fsb-before-gift-label', btn.getAttribute('aria-label') || '');
+    }
+    btn.classList.add('is-loading');
+    btn.setAttribute('aria-busy', 'true');
+    btn.setAttribute('aria-label', label || 'Adding free gift to cart');
+    btn.disabled = true;
+  }
+  function bonRestoreGiftButton(btn){
+    if (!btn) return;
+    var before = btn.getAttribute('data-fsb-before-gift-html');
+    if (before !== null) btn.innerHTML = before;
+    btn.removeAttribute('data-fsb-before-gift-html');
+    btn.classList.remove('is-loading', 'is-applied');
+    btn.removeAttribute('aria-busy');
+    btn.setAttribute('aria-label', btn.getAttribute('data-fsb-before-gift-label') || 'Redeem reward');
+    btn.removeAttribute('data-fsb-before-gift-label');
+    btn.disabled = false;
+  }
+  /* Apply a normal code as before. Before that, a lookup is performed when a
+     stored BON coupon has no gift metadata yet, so old/cached Free Gift cards
+     still add their entitled Shopify variant. */
+  function bonApplyDiscountCode(code, btn, gift, lookupDone){
     code = String(code || '').trim();
     if (!code) return false;
-    /* Keep the code in the clipboard as a safety net, then let Shopify
-       auto-apply it to the cart via the /discount/<code> URL. */
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(code);
-      else bonFallbackCopy(code);
-    } catch(e){ try { bonFallbackCopy(code); } catch(e2){} }
-    try {
-      sessionStorage.setItem('fsb_applied_coupon', code);
-    } catch(e){}
-    if (btn){
-      btn.textContent = 'Applied ✓';
-      btn.classList.add('is-applied');
-      btn.setAttribute('aria-label', 'Applied');
-      btn.disabled = true;
-    }
-    if (overlay) {
-      overlay.querySelectorAll('[data-fsb-apply-code="' + code.replace(/"/g, '\\"') + '"]').forEach(function(b){
-        b.textContent = 'Applied ✓';
-        b.classList.add('is-applied');
-        b.setAttribute('aria-label', 'Applied');
-        b.disabled = true;
+
+    if (!gift && !lookupDone) {
+      bonSetGiftButtonBusy(btn, 'Checking reward');
+      bonLookupGiftForCode(code).then(function(info){
+        bonApplyDiscountCode(code, btn, bonGiftFromRedeemResponse(info), true);
+      }).catch(function(){
+        bonApplyDiscountCode(code, btn, null, true);
       });
+      return true;
     }
-    window.location.href = '/discount/' + encodeURIComponent(code) + '?redirect=/cart';
+
+    if (!gift) {
+      bonRememberAndApplyDiscount(code, btn);
+      return true;
+    }
+
+    bonSetGiftButtonBusy(btn, 'Adding free gift to cart');
+    bonResolveGiftVariant(gift).then(function(variantId){
+      if (!variantId) throw new Error('Free gift has no purchasable Shopify variant');
+      return bonAddGiftToCart(variantId, gift.quantity || 1);
+    }).then(function(){
+      updateCartCount();
+      bonRememberAndApplyDiscount(code, btn);
+    }).catch(function(err){
+      console.error('[FSB] Free gift was not added to cart:', err);
+      bonRestoreGiftButton(btn);
+      window.alert('The reward code was not applied because its free gift could not be added to the cart. Please try again. If this continues, contact support.');
+    });
     return true;
   }
   /* Walks any redeem response shape to the first plausible discount code. */
@@ -2220,6 +2498,7 @@
           bonSetPoints(d.current_point, true);
           bonWriteCache();
         }
+        var gift = bonGiftFromRedeemResponse(d);
         var newReward = {
           coupon_code: code,
           code: code,
@@ -2227,12 +2506,23 @@
           title: btn.closest('.fsb-rw-card') ? (btn.closest('.fsb-rw-card').querySelector('.fsb-rw-name') ? btn.closest('.fsb-rw-card').querySelector('.fsb-rw-name').textContent : 'Reward') : 'Reward',
           discount_type: 'reward'
         };
+        if (gift) {
+          newReward.variant_id = gift.variant_id || '';
+          newReward.product_handle = gift.product_handle || '';
+          newReward.product_url = gift.product_url || '';
+          newReward.quantity = gift.quantity || 1;
+        }
         if (!Array.isArray(bonState.rewards)) bonState.rewards = [];
         bonState.rewards.unshift(newReward);
         bonWriteCache();
         updateRewardsBadge();
         ['rewards', 'points'].forEach(function(sc){ bonRenderPanel(sc); });
-        bonApplyDiscountCode(code, btn);
+        /* Free-product reward: Shopify must receive the variant before
+           the freshly generated BON code is applied. */
+        btn.classList.remove('is-loading');
+        btn.removeAttribute('aria-busy');
+        btn.disabled = false;
+        bonApplyDiscountCode(code, btn, gift);
       })
       .catch(bail);
       return;
@@ -2632,7 +2922,6 @@
     /* Rewards sub-tabs (Available / Used / Expired) inside the membership drawer */
     var lyt=e.target.closest('[data-fsb-lytab]');if(lyt){e.preventDefault();bonTab.rewards=lyt.getAttribute('data-fsb-lytab');accountTab('rewards');}
     var htab=e.target.closest('.fsb-history-tabs button');if(htab){var hs=htab.parentNode;hs.querySelectorAll('button').forEach(function(b){b.classList.remove('is-active');});htab.classList.add('is-active');}
-    var trm=e.target.closest('[data-fsb-terms]');if(trm){var tc=trm.closest('.fsb-rw-card');if(tc)tc.classList.toggle('is-open');}
     var region=e.target.closest('[data-fsb-open-region]');if(region){e.preventDefault();closeAllPanels();openPanel('region');}
     var add=e.target.closest('[data-fsb-account-add-address]');if(add){e.preventDefault();openAddressPair();}
     var lgo=e.target.closest('[data-fsb-logout]');if(lgo){e.preventDefault();window.location.href='{{ routes.account_logout_url }}';}
