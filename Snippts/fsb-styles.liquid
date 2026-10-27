@@ -887,6 +887,13 @@ iframe#shopify-chat-iframe {
 /* ============================================================ */
 .fsb-rl-body{ padding-bottom: 10px; }
 .fsb-rl-section{ margin-bottom: 6px; }
+/* the line that shows where the visitor is right now (from Shopify Markets) */
+.fsb-rl-current{
+  font-size: 12px;
+  color: #6b6b6b;
+  margin: -4px 0 10px;
+}
+.fsb-rl-current strong{ color: #333; font-weight: 600; }
 .fsb-rl-label{
   font-size: 11.5px;
   font-weight: 700;
@@ -2711,11 +2718,12 @@ iframe#shopify-chat-iframe {
     bottom: calc(84px + env(safe-area-inset-bottom, 0px)) !important;
     height: calc(100dvh - 84px - env(safe-area-inset-bottom, 0px)) !important;
   }
-  /* Theme drawers (cart drawer + any default/promo/gift side drawer) —
-     FULL-BLEED jaise membership drawer: poori screen cover, background
-     neeche nav tak extended; inner scroll area 82px oopar rukta hai taake
-     checkout/footer buttons floating nav ke peechay na chhupein. Drawer
-     band ho to yeh rule lagta hi nahi (.active/visible par hi). */
+  /* Theme drawers (cart drawer + any default/promo/gift side drawer) are
+     full-bleed like the membership drawer: they cover the whole screen and
+     the background runs down to the nav. The inner scroll area stops 82px
+     above the bottom so the checkout/footer buttons never hide behind the
+     floating nav. While the drawer is closed the rule does not apply at all
+     (only the .active / .visible states are matched). */
   .cart-drawer.active,
   :is(.side-panel, .promo-drawer, .gift-drawer, .cart-gift-drawer, .drawer, [class*="-drawer"]):not([class*="fsb"]):is(.active, .is-open, .is-active, .open, .visible, [data-open], [aria-hidden="false"]){
     top: 0 !important;
@@ -2743,8 +2751,8 @@ iframe#shopify-chat-iframe {
 .fsb-switch-big input:checked+i:before{transform: translateX(15px) !important}
 .fsb-mkt-state{display: none !important}
 
-/* Membership drawer: desktop par tabs gayab, sirf Profile details dikhenge.
-   Mobile (<=767px) par tabs bilkul pehle jaise rahenge. */
+/* Membership drawer: on desktop the tabs are hidden and only the profile
+   details are shown. On mobile (<=767px) the tabs stay exactly as before. */
 @media only screen and (min-width: 768px){
   #fsb-panel-account-{{ section.id }} .fsb-account-tabs{
     display: none !important;
@@ -2759,22 +2767,23 @@ iframe#shopify-chat-iframe {
 
 /* ======================================================================
    BATCH 2026-09-01 — Order details UX
-   (1) Desktop: jis order ka detail khula hai, us order card ka border
-       GOLD ho jata hai (left drawer mein highlight).
-   (2) Mobile: order detail alag drawer nahi khulta — wohi drawer ke
-       andar list hide ho kar detail aa jati hai; back par list wapas.
+   (1) Desktop: the order whose detail is open gets a GOLD border on its card
+       in the left drawer (the highlight).
+   (2) Mobile: the detail does not open in a separate drawer - inside the same
+       drawer the list hides and the detail takes its place; going back brings
+       the list back.
    ====================================================================== */
 
-/* (1) Clicked order — gold border highlight (gated on the pair being
-     open, so the border khud apne aap hat bhi jata hai jab detail band ho) */
+/* (1) Clicked order - gold border highlight (gated on the pair being open,
+     so the border clears itself again as soon as the detail is closed) */
 #fsb-panel-overlay-{{ section.id }}.fsb-od-pair-open .fsb-list-card.fsb-od-selected{
   border-color: #c79a3c !important;
   box-shadow: 0 0 0 1px #c79a3c !important;
 }
 
-/* (2) Mobile: detail drawer host drawer ke EXACT oopar cover hota hai —
-     list uske neeche chhupi rehti hai, back karne par wapas nazar aati hai.
-     Height host ke mutabiq (orders drawer 88vh / account drawer 92vh). */
+/* (2) Mobile: the detail drawer covers the host drawer exactly - the list
+     stays hidden underneath and comes back when the visitor goes back.
+     Its height follows the host (orders drawer 88vh / account drawer 92vh). */
 @media only screen and (max-width: 767px){
   #fsb-panel-overlay-{{ section.id }}.fsb-od-pair-open #fsb-panel-orderdetail-{{ section.id }}.active{
     left: 0 !important;
@@ -2916,6 +2925,522 @@ iframe#shopify-chat-iframe {
   }
 }
 
+/* ==========================================================
+   ICON TOOLTIPS + DRAWER LABELS  (reference design)
+   · hover  -> cream tile behind the icon + cream pill beside it
+   · active -> the same look, and it STAYS while that drawer is open
+   · any drawer open (or the bar hovered) -> every icon shows its
+     name beside the bar; fsb-scripts widens --fsb-sidebar-span so
+     the page, the side panel and the cart drawer stay aligned.
+   Colours: cream (Tooltip Background) + the store gold
+   (Active Icon Color), matching the tier card.
+   ========================================================== */
+{% if section.settings.show_icon_tooltips != false %}
+{% assign fsb_tip_bg   = section.settings.tooltip_bg_color | default: '#f8eee2' %}
+{% assign fsb_tip_gold = section.settings.active_icon_color | default: '#c79a3c' %}
+{% assign fsb_icon_col = section.settings.icon_color | default: '#333333' %}
+{% assign fsb_lbl_size = section.settings.tooltip_label_size | default: 13 %}
+@media only screen and (min-width: 768px){
+
+  #sid-{{ section.id }} [data-fsb-tip]{ position: relative; }
+  #sid-{{ section.id }} .fsb-item,
+  #sid-{{ section.id }} .fsb-logo,
+  #sid-{{ section.id }} .mobile-order-item{
+    transition: background-color .26s cubic-bezier(.22, 1, .36, 1),
+                color .26s cubic-bezier(.22, 1, .36, 1);
+  }
+
+  /* ---------- 1. ICON TILE (hover + active) ----------
+     padding + matching negative margin = the tile grows OUTWARD,
+     so the bar keeps its exact width (no layout shift at all). */
+  #sid-{{ section.id }} .fsb-item:hover,
+  #sid-{{ section.id }} .fsb-item.fsb-active{
+    background: {{ fsb_tip_bg }};
+    border-radius: 10px;
+    padding: 9px;
+    margin: -9px;
+    box-sizing: content-box;
+    color: {{ fsb_tip_gold }};
+  }
+  /* account badge is 36px -> 2px of padding lands on the same 40px tile */
+  #sid-{{ section.id }} .fsb-logo:hover,
+  #sid-{{ section.id }} .fsb-logo.fsb-active{
+    background: {{ fsb_tip_bg }};
+    border-radius: 10px;
+    padding: 2px;
+    margin: -2px;
+    box-sizing: content-box;
+    color: {{ fsb_tip_gold }};
+  }
+  #sid-{{ section.id }} .fsb-item:hover svg .cls-1,
+  #sid-{{ section.id }} .fsb-item.fsb-active svg .cls-1,
+  #sid-{{ section.id }} .fsb-logo:hover svg .cls-1,
+  #sid-{{ section.id }} .fsb-logo.fsb-active svg .cls-1{
+    fill: {{ fsb_tip_gold }} !important;
+  }
+
+  /* ---------- 2. THE PILL BESIDE THE BAR ---------- */
+  /* one shared curve for the whole tooltip (the theme's own ease-out) so the
+     pill grows out of the icon instead of popping in */
+  #sid-{{ section.id }} [data-fsb-tip]::after,
+  #sid-{{ section.id }} [data-fsb-tip]::before{
+    position: absolute;
+    top: 50%;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    z-index: 1006;
+    will-change: opacity, transform;
+    transition:
+      opacity .3s cubic-bezier(.22, 1, .36, 1),
+      transform .34s cubic-bezier(.22, 1, .36, 1),
+      color .3s ease,
+      visibility .3s cubic-bezier(.22, 1, .36, 1);
+  }
+  #sid-{{ section.id }} [data-fsb-tip]::after{
+    content: attr(data-fsb-tip);
+{% if section.settings.position == 'right' %}    right: calc(100% + 15px);
+    transform: translateY(-50%) translateX(14px) scale(.96);
+    transform-origin: 100% 50%;
+{% else %}    left: calc(100% + 15px);
+    transform: translateY(-50%) translateX(-14px) scale(.96);
+    transform-origin: 0 50%;
+{% endif %}    background: {{ fsb_tip_bg }};
+    color: {{ fsb_tip_gold }};
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: .2px;
+    line-height: 1.15;
+    text-transform: none;
+    text-align: left;
+    white-space: nowrap;
+    padding: 12px 28px;
+    border-radius: 10px;
+  }
+  /* short wedge pointing back at the icon (no shadow, same cream) */
+  #sid-{{ section.id }} [data-fsb-tip]::before{
+    content: '';
+    width: 0;
+    height: 0;
+    border-style: solid;
+{% if section.settings.position == 'right' %}    right: calc(100% + 6px);
+    transform: translateY(-50%) scale(.7);
+    transform-origin: 100% 50%;
+    border-width: 6px 0 6px 9px;
+    border-color: transparent transparent transparent {{ fsb_tip_bg }};
+{% else %}    left: calc(100% + 6px);
+    transform: translateY(-50%) scale(.7);
+    transform-origin: 0 50%;
+    border-width: 6px 9px 6px 0;
+    border-color: transparent {{ fsb_tip_bg }} transparent transparent;
+{% endif %}  }
+  #sid-{{ section.id }} [data-fsb-tip]:hover::after,
+  #sid-{{ section.id }} [data-fsb-tip]:hover::before,
+  #sid-{{ section.id }} [data-fsb-tip]:focus-visible::after,
+  #sid-{{ section.id }} [data-fsb-tip]:focus-visible::before{
+    opacity: 1;
+    visibility: visible;
+  }
+  #sid-{{ section.id }} [data-fsb-tip]:hover::after,
+  #sid-{{ section.id }} [data-fsb-tip]:focus-visible::after{
+    transform: translateY(-50%) translateX(0) scale(1);
+  }
+  #sid-{{ section.id }} [data-fsb-tip]:hover::before,
+  #sid-{{ section.id }} [data-fsb-tip]:focus-visible::before{
+    transform: translateY(-50%) scale(1);
+  }
+
+  /* ---------- 3. ALL LABELS WHILE A DRAWER IS OPEN ----------
+     The bar widens to --fsb-open-w, which fsb-scripts measures from the
+     real name widths (a fixed number cannot be guessed in CSS because
+     shopify's own "svg{width:100%}" rule collapses the icon as soon as
+     the row is allowed to grow). Every row becomes icon + 11px + name,
+     all rows stretch to the same width so the names line up, and each
+     icon keeps the exact footprint it has in the collapsed bar. */
+  #sid-{{ section.id }} .fsb-container{
+    transition: width .3s ease, min-width .3s ease, max-width .3s ease;
+  }
+  /* The desktop layout locks the bar to its collapsed width with
+     ``width / min-width / max-width: calc(...) !important`` (see the >=991px
+     block above), so the label mode has to override all three with the same
+     importance to be able to open up. --fsb-open-w is measured by
+     fsb-scripts; if it is missing the bar simply keeps today's behaviour. */
+  html.fsb-tips-open #sid-{{ section.id }} .fsb-container{
+    align-items: stretch;
+    width: var(--fsb-open-w, auto) !important;
+    min-width: var(--fsb-open-w, auto) !important;
+    max-width: var(--fsb-open-w, none) !important;
+  }
+  html.fsb-tips-open #sid-{{ section.id }} .fsb-group,
+  html.fsb-tips-open #sid-{{ section.id }} .fsb-logo-wrap{
+    align-items: stretch;
+  }
+  html.fsb-tips-open #sid-{{ section.id }} .fsb-item,
+  html.fsb-tips-open #sid-{{ section.id }} .mobile-order-item{
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 11px;
+    width: auto;
+    height: auto;
+    min-width: 0;
+    max-width: none;
+    align-self: stretch;
+    padding: 0;
+    margin: 0;
+    box-sizing: border-box;
+    /* the tile is drawn by ::before below, so the row itself stays flat */
+    background: transparent;
+    border-radius: 0;
+  }
+  /* keep the exact icon footprint of the collapsed bar */
+  html.fsb-tips-open #sid-{{ section.id }} .fsb-item > .thb-secondary-item-icon,
+  html.fsb-tips-open #sid-{{ section.id }} .fsb-item > svg.fsb-drive-icon{
+    width: {{ section.settings.icon_size }}px !important;
+    height: {{ section.settings.icon_size }}px !important;
+    min-width: {{ section.settings.icon_size }}px !important;
+    max-width: {{ section.settings.icon_size }}px !important;
+    flex: 0 0 {{ section.settings.icon_size }}px !important;
+    box-sizing: border-box !important;
+  }
+  html.fsb-tips-open #sid-{{ section.id }} .thb-secondary-item-icon > svg{
+    width: 100% !important;
+    height: 100% !important;
+  }
+  /* the region row stacks a flag image + the globe artwork in one slot,
+     exactly like the collapsed bar does */
+  html.fsb-tips-open #sid-{{ section.id }} .fsb-item[data-fsb-icon="region"]{
+    padding-left: {{ section.settings.icon_size | plus: 11 }}px;
+  }
+  html.fsb-tips-open #sid-{{ section.id }} .fsb-item[data-fsb-icon="region"] > img,
+  html.fsb-tips-open #sid-{{ section.id }} .fsb-item[data-fsb-icon="region"] > svg{
+    position: absolute;
+    left: 0;
+    top: 50%;
+    margin-top: -{{ section.settings.icon_size | divided_by: 2 }}px;
+    width: {{ section.settings.icon_size }}px;
+    height: {{ section.settings.icon_size }}px;
+  }
+  /* counters hug their own icon (like the collapsed bar) instead of
+     floating at the far end of the widened row. Parked on the icon's
+     top-right corner where they clear the name by a few pixels.
+     (Account has no counter, so one rule is enough.) */
+  html.fsb-tips-open #sid-{{ section.id }} .thb-item-count{
+    right: auto;
+    top: -7px;
+    left: {{ section.settings.icon_size | minus: 14 }}px;
+  }
+  /* the account badge keeps its own 36px size and its own dark background
+     (only the row padding is dropped) */
+  html.fsb-tips-open #sid-{{ section.id }} .fsb-logo{
+    flex: 0 0 auto;
+    padding: 0;
+    margin: 0;
+  }
+  /* ---------- the cream tile in label mode ----------
+     Drawn by the row's OWN ::before as a flex item that takes zero net width
+     (40px box, -9px left margin hangs it 9px before the icon, -42px right
+     margin + the 11px gap cancel it out again -> nothing in the row moves).
+     Because it is a real box, `border-radius: 10px` gives exactly the same
+     rounded tile the account badge shows, and nothing about the icon can
+     distort it: the theme scales several icons with `transform: scale(1.3)`,
+     which used to stretch a shadow-based tile to 53px with square corners.
+     `align-self: center` puts it concentrically behind the icon whatever the
+     row's height is. */
+  /* ---- the hover / active tile ------------------------------------------
+     A real 40x40 rounded box, painted behind the icon. Never a shadow: the
+     theme scales several icons with a transform, which used to stretch a
+     shadow-based tile to 53px with square corners.
+     The box is absolutely positioned and the label controller hands it the
+     icon's exact centre through --fsb-tile-x / --fsb-tile-dy. It CANNOT be
+     worked out from the row's padding: on the live theme the icon slot and the
+     artwork are not the same box (the theme nudges/scales the icons), so any
+     fixed margin leaves the tile a few px left of the icon - that was the
+     "the box sits to the left of the icon" report. Out of flow it can never move
+     the bar, the icon or the name. */
+  /* every row keeps the 40px it had while the tile was still in flow: the 40px
+     tile always sits inside its own row, so no ancestor can ever clip it, and
+     the bar keeps exactly the height the approved screenshots showed. */
+  html.fsb-tips-open #sid-{{ section.id }} .fsb-item,
+  html.fsb-tips-open #sid-{{ section.id }} .mobile-order-item{
+    min-height: 40px;
+  }
+  html.fsb-tips-open #sid-{{ section.id }} .fsb-item::before,
+  html.fsb-tips-open #sid-{{ section.id }} .mobile-order-item::before{
+    content: '';
+    display: block;
+    position: absolute;
+    /* x comes from the label controller (the icon's measured centre, the
+       live theme offsets its icons); y is plain CSS: the tile is centred in
+       its own row, which is at least 40px tall - so a taller row keeps the
+       tile on the icon without any re-measuring. --fsb-tile-dy is only set
+       when the artwork is genuinely off the row's centre line. */
+    left: var(--fsb-tile-x, -999px);
+    top: calc(50% + var(--fsb-tile-dy, 0px));
+    width: 40px;
+    height: 40px;
+    margin: -20px 0 0 0;
+    padding: 0;
+    border: 0;
+    box-sizing: border-box;
+    border-radius: 10px;
+    background: transparent;
+    box-shadow: none;
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    pointer-events: none;
+    /* behind the icon: a negative layer is still above the bar's background,
+       so the tile shows and every icon and name stays on top of it. */
+    z-index: -1;
+    transition: background-color .26s cubic-bezier(.22, 1, .36, 1);
+  }
+  /* cream only on hover / active (closed bar keeps its own approved hover) */
+  html.fsb-tips-open #sid-{{ section.id }} .fsb-item:hover::before,
+  html.fsb-tips-open #sid-{{ section.id }} .fsb-item.fsb-active::before,
+  html.fsb-tips-open #sid-{{ section.id }} .mobile-order-item:hover::before,
+  html.fsb-tips-open #sid-{{ section.id }} .mobile-order-item.fsb-active::before,
+  html.fsb-tips-open #sid-{{ section.id }} .mobile-order-item:has(.fsb-active)::before{
+    background: {{ fsb_tip_bg }};
+  }
+
+  /* name sits inline: no floating pill, no arrow, no pseudo tile (the tile
+     is the rounded box above). Only the label text remains. */
+  html.fsb-tips-open #sid-{{ section.id }} [data-fsb-tip]::after{
+    position: static;
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    color: {{ fsb_icon_col }};
+    font-size: {{ fsb_lbl_size }}px;
+    font-weight: 500;
+    letter-spacing: .1px;
+    white-space: nowrap;
+    /* the name eases out of the icon instead of snapping into place */
+    animation: fsbNameIn .3s cubic-bezier(.22, 1, .36, 1) both;
+  }
+  @keyframes fsbNameIn{
+    from{ opacity: 0; transform: translateX(-6px); }
+    to{ opacity: 1; transform: translateX(0); }
+  }
+  html.fsb-tips-open #sid-{{ section.id }} [data-fsb-tip]:hover::after,
+  html.fsb-tips-open #sid-{{ section.id }} .fsb-active::after,
+  html.fsb-tips-open #sid-{{ section.id }} .mobile-order-item:has(.fsb-active)::after{
+    color: {{ fsb_tip_gold }};
+  }
+
+  /* the bar widening glides instead of snapping */
+  body{ transition: padding-left .3s ease, padding-right .3s ease; }
+  .fsb-side-panel{
+    transition: transform .5s cubic-bezier(0.22, 1, 0.36, 1), left .3s ease, right .3s ease;
+  }
+  /* the theme animates its own cart drawer with "all .5s cubic-bezier(.104,.204,.492,1)" */
+  .cart-drawer{
+    transition: all .5s cubic-bezier(.104,.204,.492,1);
+  }
+}
+{% endif %}
+
+/* ==========================================================================
+   First-visit region gate  (fsb-region-gate)
+   Same two options + same look as the Region & Language drawer, shown before
+   the visitor starts shopping. Hong Kong -> stay on this site, International
+   -> the link set in the theme settings.
+   ========================================================================== */
+.fsb-region-gate{
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  /* there is no dimming layer any more, so the page stays usable while the
+     popup is up: the wrapper ignores pointer events and only the card takes them */
+  pointer-events: none;
+}
+.fsb-region-gate-card{ pointer-events: auto; }
+.fsb-region-gate[hidden]{ display: none; }
+/* The popup belongs to the sidebar, so it sits beside the bar on the line of
+   the Language icon instead of floating in the middle of the page. The script
+   measures the bar and the icon and writes --fsb-gate-x / --fsb-gate-y (the
+   card's top-left corner); if the bar is missing the script centres it. */
+.fsb-region-gate-card{
+  position: fixed;
+  left: var(--fsb-gate-x, 24px);
+  top: var(--fsb-gate-y, 24px);
+  width: 300px;
+  max-width: calc(65vw - 32px);
+  box-sizing: border-box;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 22px 22px 24px;
+  animation: fsbGateIn .34s cubic-bezier(.22, 1, .36, 1) both;
+}
+/* grows out of the bar, the same motion the tooltips use */
+@keyframes fsbGateIn{
+  from{ opacity: 0; translate: -14px 0; }
+  to{ opacity: 1; translate: 0 0; }
+}
+/* the line that shows where the visitor is right now (from Shopify Markets) */
+.fsb-region-gate-current{
+  font-size: 13px;
+  color: #6b6b6b;
+  margin: 4px 0 12px;
+}
+.fsb-region-gate-current strong{ color: #333; font-weight: 600; }
+.fsb-region-gate-title{
+  font-size: 19px;
+  line-height: 1.35;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0 0 12px;
+  padding-right: 26px;
+}
+.fsb-region-gate-close{
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  border: 0;
+  background: transparent;
+  color: #444;
+  padding: 6px;
+  line-height: 0;
+  cursor: pointer;
+}
+.fsb-region-gate-trigger{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #ece7de;
+  background: #ffffff;
+  color: #1a1a1a;
+  font-size: 16px;
+  font-weight: 500;
+  padding: 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color .2s ease;
+}
+.fsb-region-gate-trigger:hover{ border-color: #ddd5c7; }
+.fsb-region-gate-chev{ flex: 0 0 auto; color: #6b6b6b; transition: transform .2s ease; }
+.fsb-region-gate-trigger[aria-expanded="true"] .fsb-region-gate-chev{ transform: rotate(180deg); }
+.fsb-region-gate-list{
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  border: 1px solid #f1ece2;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.fsb-region-gate-list[hidden]{ display: none; }
+.fsb-region-gate-continue{
+  width: 100%;
+  margin-top: 16px;
+  border: 0;
+  cursor: pointer;
+  background: {{ section.settings.active_icon_color | default: '#c79a3c' }};
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  padding: 15px 18px;
+  border-radius: 26px;
+  transition: background .2s ease, opacity .2s ease;
+}
+.fsb-region-gate-continue:hover{ background: #b98a2c; }
+.fsb-region-gate-form{ display: none; }
+@media (max-width: 767px){
+  /* mobile: the script keeps the card just above the bottom bar, on the
+     Language icon's side, so only the padding changes here */
+  .fsb-region-gate-card{ padding: 18px 18px 20px; border-radius: 14px; }
+  .fsb-region-gate-title{ font-size: 17px; }
+}
+
+  /* ============================================================
+     v10 (additions only - nothing existing is changed)
+     1) With the cart drawer open, the theme's page overlay lets
+        clicks pass through, so more products can be added while the
+        drawer stays open (invisible - interaction only).
+     2) The cart drawer scrolls safely (invisible).
+     3) Mobile cart drawer: bottom clearance so Checkout / View Cart
+        sit above the fsb bottom bar (requested in the brief).
+     4) The contact block's own look (matches the menu's plain text).
+     ============================================================ */
+  body.open-cc.fsb-cart-open #wrapper .click-capture{ pointer-events: none !important; }
+  /* v10.10: the header script can run before the theme appends #Cart-Drawer.
+     The actual active drawer is also an independent CSS signal: never let
+     the invisible theme page overlay absorb cart wheel/touch gestures. */
+  body.open-cc:has(#Cart-Drawer.active) #wrapper .click-capture{ pointer-events: none !important; }
+  #Cart-Drawer .side-panel-content{ -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+  @media (max-width: 767px){
+    #Cart-Drawer .side-panel-content{ padding-bottom: calc(90px + env(safe-area-inset-bottom)) !important; }
+  }
+  .fsb-menu-contact{ padding: 18px 4px 6px; margin-top: 8px; }
+  .fsb-menu-contact-title{ margin: 0 0 10px; font-size: 15px; font-weight: 600; letter-spacing: 0.2px; }
+  .fsb-menu-contact-email{ display: inline-block; color: inherit; font-size: 14px; text-decoration: underline; text-underline-offset: 2px; }
+  .fsb-menu-contact-line{ margin: 6px 0 0; font-size: 14px; line-height: 1.5; opacity: 0.85; }
+
+  /* v10.5: (1) the cart drawer's scroll area can shrink to the drawer
+     height, so a long cart scrolls down to the CTAs on every page.
+     (2) On mobile the fsb navigation bar always stays ON TOP of the
+     cart drawer, so the menu / account icons stay reachable without
+     closing the drawer first (as requested by the client). */
+  #Cart-Drawer .side-panel-content{ min-height: 0; }
+  /* v10.6: while the cart drawer is open on a collection page, the
+     product grid behind shows 3 per line instead of 4 (desktop only,
+     where the 4-column grid lives). Drawer close = back to 4. */
+  @media (min-width: 1360px){
+    body.fsb-cart-open #product-grid,
+    body:has(#Cart-Drawer.active) #product-grid,
+    body.fsb-panel-open #product-grid,
+    body:has(.side-panel.active) #product-grid{ grid-template-columns: repeat(3, 1fr) !important; }
+  }
+  @media (max-width: 767px){
+    body.open-cc #sid-{{ section.id }} .fsb-container{ z-index: 9999 !important; }
+  }
+
+  /* v10.9: the THEME owns the Cart drawer grid (header, scrollable middle,
+     footer). Only its middle should scroll, even after theme HTML rerenders.
+     On mobile, shorten that grid above the floating 74px nav + gap, instead
+     of allowing its fixed footer to sit BEHIND the nav. No other drawer rules,
+     paddings, margins, or visual styles are changed. */
+  #Cart-Drawer.active{ overflow: hidden !important; }
+  #Cart-Drawer .side-panel-content{ overflow-y: auto !important; }
+  @media (max-width: 767px){
+    #Cart-Drawer.active .side-panel-inner{
+      height: calc(100vh - 84px - env(safe-area-inset-bottom, 0px)) !important;
+      height: calc(100dvh - 84px - env(safe-area-inset-bottom, 0px)) !important;
+    }
+    body:has(#Cart-Drawer.active) #sid-{{ section.id }} .fsb-container{ z-index: 9999 !important; }
+    /* Let the requested account name show in full, without moving icons or
+       changing the bar's width/padding. The label stays tappable even at its
+       edges above adjacent label boxes; the tiny-screen guest name is smaller. */
+    #sid-{{ section.id }} .fsb-logo-wrap > .mobile-order-item > .mobile-icon-title{
+      width: max-content !important;
+      overflow: visible !important;
+      text-overflow: clip !important;
+      position: relative;
+      z-index: 1;
+    }
+  }
+  @media (max-width: 350px){
+    #sid-{{ section.id }} .fsb-logo-wrap > .mobile-order-item:not(.account-mbl) > .mobile-icon-title{
+      font-size: 9px;
+    }
+  }
+
+  /* v10.2: the moved policy links + contact block keep their LEFT-aligned
+     look (exactly like the desktop More Information drawer) at the very
+     bottom of the mobile menu. The theme footer (Login / Register) is
+     NOT touched at all - it keeps the theme's original styling. The
+     display rule only makes the moved links visible (their own class
+     hides them on mobile - a visibility fix, not styling). */
+  .fsb-mobile-menu-clone .fsb-menu-root{ display: block !important; }
+  .fsb-mobile-menu-clone .fsb-menu-contact{ text-align: left; padding: 16px 20px 6px; }
 </style>
 
 
