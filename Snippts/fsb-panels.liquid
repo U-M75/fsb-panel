@@ -374,6 +374,19 @@
             {% endfor %}
           </ul>
         {% endif %}
+      <div class="fsb-menu-contact" id="fsb-menu-contact-{{ section.id }}">
+        <h4 class="fsb-menu-contact-title">{{ section.settings.contact_heading | default: 'Contact' }}</h4>
+        {%- assign fsb_contact_email = section.settings.contact_email | default: 'support@nextcigar.com' -%}
+        {%- if fsb_contact_email != blank -%}
+          <a class="fsb-menu-contact-email" href="mailto:{{ fsb_contact_email }}">{{ fsb_contact_email }}</a>
+        {%- endif -%}
+        {%- if section.settings.contact_hours != blank -%}
+          <p class="fsb-menu-contact-line">{{ section.settings.contact_hours }}</p>
+        {%- endif -%}
+        {%- if section.settings.contact_hours_note != blank -%}
+          <p class="fsb-menu-contact-line">{{ section.settings.contact_hours_note }}</p>
+        {%- endif -%}
+      </div>
        <h2 class="footer-copyright-title">
           {{ section.settings.copyright_text }}
         </h2>
@@ -407,19 +420,35 @@
         if current_country_code == 'HK'
           assign is_hk = true
         endif
-        assign int_iso = 'US'
+        assign int_iso = section.settings.region_intl_country_code | default: '' | strip | upcase
+        assign int_ok = false
         if localization.available_countries
           for c in localization.available_countries
-            if c.iso_code != 'HK'
-              assign int_iso = c.iso_code
+            if int_iso != blank and c.iso_code == int_iso
+              assign int_ok = true
               break
             endif
           endfor
+        endif
+        unless int_ok
+          assign int_iso = ''
+          if localization.available_countries
+            for c in localization.available_countries
+              if c.iso_code != 'HK'
+                assign int_iso = c.iso_code
+                break
+              endif
+            endfor
+          endif
+        endunless
+        if int_iso == blank
+          assign int_iso = 'US'
         endif
         assign cur_store_lang = localization.language.iso_code | downcase
       -%}
       <div class="fsb-rl-section">
         <div class="fsb-rl-label">Region</div>
+        <div class="fsb-rl-current">You're visiting from: <strong>{% if is_hk %}Hong Kong SAR{% else %}{{ localization.market.name | default: 'International' }}{% endif %}</strong></div>
         <ul class="fsb-rl-list" id="fsb-region-list-{{ section.id }}">
           <li>
             <button type="button"
@@ -479,10 +508,12 @@
         </ul>
       </div>
       <div class="fsb-rl-hidden-forms" aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;">
-        {%- form 'localization', id: 'fsb-localization-form-' | append: section.id, class: 'fsb-localization-form' -%}
+        {%- assign fsb_loc_form_id = 'fsb-localization-form-' | append: section.id -%}
+        {%- form 'localization', id: fsb_loc_form_id, class: 'fsb-localization-form' -%}
           <input type="hidden" name="return_to" id="fsb-return-to-{{ section.id }}" value="{{ request.path }}">
           <input type="hidden" name="country_code" id="fsb-country-input-{{ section.id }}" value="{{ localization.country.iso_code }}">
           <input type="hidden" name="locale_code" id="fsb-locale-input-{{ section.id }}" value="{{ localization.language.iso_code }}">
+          <input type="hidden" name="language_code" id="fsb-language-input-{{ section.id }}" value="{{ localization.language.iso_code }}">
         {%- endform -%}
       </div>
       <script id="fsb-localization-data-{{ section.id }}" type="application/json">
@@ -626,6 +657,7 @@
     <div class="fsb-panel-body" id="fsb-add-address-content-{{ section.id }}">
       <!-- Address form -->
       {%- form 'customer_address', customer.new_address, aria-labelledBy: 'AddressNewHeading' -%}
+        <input type="hidden" name="return_to" value="{{ request.path }}" data-fsb-return-to>
         <div class="fields">
           <div class="field">
             <input type="text" id="fsb-address-firstname" name="address[first_name]" value="{{ form.first_name }}" autocomplete="given-name" placeholder="{{ 'customer.addresses.first_name' | t }}" class="full">
@@ -717,6 +749,7 @@
         </div>
         <div class="fsb-panel-body" id="fsb-edit-address-content-{{ section.id }}-{{ address.id }}">
           {%- form 'customer_address', address -%}
+            <input type="hidden" name="return_to" value="{{ request.path }}" data-fsb-return-to>
             <div class="fields">
               <div class="field">
                 <input type="text" id="fsb-edit-address-firstname-{{ section.id }}-{{ address.id }}" name="address[first_name]" value="{{ form.first_name }}" autocomplete="given-name" placeholder="{{ 'customer.addresses.first_name' | t }}" class="full">
