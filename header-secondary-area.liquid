@@ -1,0 +1,924 @@
+{%- liquid
+	if customer
+  	assign profile_link = routes.account_url
+	else
+  	assign profile_link = "https://account.nextcigar.com/home/nextcigar"
+	endif
+-%}
+
+<div class="thb-secondary-area thb-header-right">
+	<a class="thb-secondary-area-item thb-quick-search" href="{{ routes.search_url }}" title="{{ 'sections.header.search' | t }}">{%- render 'svg-icons' with 'search' -%}</a>
+	{%- if shop.customer_accounts_enabled -%}
+    <a class="thb-secondary-area-item thb-secondary-myaccount" href="{{ profile_link | escape }}{% if routes.root_url != '/' %}?site={{ routes.root_url | remove: "/" }}{% endif %}" title="{{ 'sections.header.my_account' | t }}">{%- render 'svg-icons' with 'myaccount' -%}</a>
+  {%- endif -%}
+	<a class="thb-secondary-area-item thb-secondary-cart" href="{{ routes.cart_url }}" id="cart-drawer-toggle"><div class="thb-secondary-item-icon">{% render 'svg-icons' with 'cart' %} <span class="thb-item-count">{%- if cart.item_count > 99 -%}{%- render 'svg-icons' with 'thb-asterisk' -%}{%- else -%}{{ cart.item_count }}{%- endif -%}</span></div></a>
+  	<a id="flag-popup-trigger" class="thb-secondary-area-item thb-secondary-flag" href="javascript:void(0)">
+		{% if localization.country.iso_code == 'HK'  %}
+			<img id="globe-icon" src="https://cdn.shopify.com/static/images/flags/hk.svg" style="width: 23px; height: 18px; object-fit: contain; border-radius: 2px;">
+		{% endif %}
+		{% if localization.country.iso_code == 'JP'  %}
+			<img id="globe-icon" src="https://cdn.shopify.com/static/images/flags/jp.svg" style="width: 23px; height: 18px; object-fit: contain; border-radius: 2px;">
+		{% endif %}
+		{% if localization.country.iso_code == 'KR'  %}
+			<img id="globe-icon" src="https://cdn.shopify.com/static/images/flags/kr.svg" style="width: 23px; height: 18px; object-fit: contain; border-radius: 2px;">
+		{% endif %}
+		{% if localization.country.iso_code == 'TW'  %}
+			<img id="globe-icon" src="https://cdn.shopify.com/static/images/flags/tw.svg" style="width: 23px; height: 18px; object-fit: contain; border-radius: 2px;">
+		{% endif %}
+		{% if localization.country.iso_code == 'CN' %}
+			<img id="globe-icon" src="https://cdn.shopify.com/s/files/1/1279/4609/files/globe_23.png" style="width: 23px; height: 18px; object-fit: contain; border-radius: 2px;">
+		{% endif %}
+		<img id="flag-trigger-icon" src="" class="flag-trigger-img" style="display: none; width: 23px; height: 18px; object-fit: contain; border-radius: 2px;">
+	</a>
+
+	<!-- Flag Popup -->
+	<div class="flag-popup-overlay" id="flag-popup-overlay">
+		<div class="flag-popup-container" id="flag-popup-container">
+			<button class="flag-popup-close" id="flag-popup-close" aria-label="Close popup">
+				<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+					<path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+				</svg>
+			</button>
+			<div class="flag-popup-content">
+				<ul>
+					<li class="box toggle_custom_hidden"><label><strong>Region</strong></label></li>
+					<li class="box toggle_custom_hidden">
+						<span id="correct_region"></span>
+						<!-- Hidden select for form submission -->
+						<select id="incorrect_region" name="regionOption" style="display: none;">
+							{% if localization.country.iso_code == 'HK'  %}<option value="hk" selected>Hong Kong</option>{% endif %}
+							{% if localization.country.iso_code == 'JP'  %}<option value="jp" selected>Japan</option>{% endif %}
+							{% if localization.country.iso_code == 'KR'  %}<option value="kr" selected>South Korea</option>{% endif %}
+							{% if localization.country.iso_code == 'TW'  %}<option value="tw" selected>Taiwan</option>{% endif %}
+							{% if localization.country.iso_code == 'CN'  %}<option value="cn" selected>International</option>{% endif %}
+							<option class="suggest_region" value="">...</option>
+						</select>
+						
+						<!-- Custom dropdown with flag images -->
+						<div id="custom_region_dropdown" class="custom-dropdown" style="display: none;">
+							<div class="custom-dropdown-selected">
+								<span class="flag-image-container">
+									<img id="selected_flag_img" src="" alt="" class="flag-img" style="display: none;">
+								</span>
+								<span id="selected_region_text"></span>
+								<svg class="dropdown-arrow" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+									<path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+								</svg>
+							</div>
+							<div class="custom-dropdown-options">
+								{% if localization.country.iso_code == 'HK'  %}
+									<div class="custom-dropdown-option" data-value="hk" data-flag="https://cdn.shopify.com/static/images/flags/hk.svg">
+										<img src="https://cdn.shopify.com/static/images/flags/hk.svg" class="flag-img">
+										<span>Hong Kong</span>
+									</div>
+								{% endif %}
+								{% if localization.country.iso_code == 'JP' %}
+									<div class="custom-dropdown-option" data-value="jp" data-flag="https://cdn.shopify.com/static/images/flags/jp.svg">
+										<img src="https://cdn.shopify.com/static/images/flags/jp.svg" class="flag-img">
+										<span>Japan</span>
+									</div>
+								{% endif %}
+								{% if localization.country.iso_code == 'KR' %}
+									<div class="custom-dropdown-option" data-value="kr" data-flag="https://cdn.shopify.com/static/images/flags/kr.svg">
+										<img src="https://cdn.shopify.com/static/images/flags/kr.svg" class="flag-img">
+										<span>South Korea</span>
+									</div>
+								{% endif %}
+								{% if localization.country.iso_code == 'TW' %}
+									<div class="custom-dropdown-option" data-value="tw" data-flag="https://cdn.shopify.com/static/images/flags/tw.svg">
+										<img src="https://cdn.shopify.com/static/images/flags/tw.svg" class="flag-img">
+										<span>Taiwan</span>
+									</div>
+								{% endif %}
+								{% if localization.country.iso_code == 'CN' %}
+									<div class="custom-dropdown-option" data-value="cn" data-flag="https://cdn.shopify.com/s/files/1/1279/4609/files/globe_23.png">
+										<img src="https://cdn.shopify.com/s/files/1/1279/4609/files/globe_23.png">
+										<span>International</span>
+									</div>
+								{% endif %}
+								<div class="custom-dropdown-option suggest_region_option" data-value="" data-flag="">
+									<span>...</span>
+								</div>
+							</div>
+						</div>
+					</li>
+					<li><label><strong>Language</strong></label></li>
+					<li>
+						<select id="language" class="language" name="languageOption">
+							<option value="en" {% if localization.language.iso_code == 'en' %}selected{% endif %}>English</option>
+							{% if localization.country.iso_code == 'CN' %}
+								<option value="zh" {% if localization.language.iso_code == 'zh-TW' %}selected{% endif %}>简体中文</option>
+							{% endif %}
+							{% if localization.country.iso_code == 'HK' or localization.country.iso_code == 'TW' %}
+								<option value="zh" {% if localization.language.iso_code == 'zh-TW' %}selected{% endif %}>繁體中文</option>
+							{% endif %}
+							{% if localization.country.iso_code == 'JP' %}
+								<option value="ja" {% if localization.language.iso_code == 'ja' %}selected{% endif %}>日本語</option>
+							{% endif %}
+							{% if localization.country.iso_code == 'KR' %}
+								<option value="ko" {% if localization.language.iso_code == 'ko' %}selected{% endif %}>한국어</option>
+							{% endif %}
+						</select>
+						<select id="language-cn" class="language" name="languageOption" style="display: none">
+							<option value="en" {% if localization.language.iso_code == 'en' %}selected{% endif %}>English</option>
+							<option value="zh" {% if localization.language.iso_code == 'zh-TW' %}selected{% endif %}>简体中文</option>
+						</select>
+						<select id="language-hk" class="language" name="languageOption" style="display: none">
+							<option value="en" {% if localization.language.iso_code == 'en' %}selected{% endif %}>English</option>
+							<option value="zh" {% if localization.language.iso_code == 'zh-TW' %}selected{% endif %}>繁體中文</option>
+						</select>
+						<select id="language-jp" class="language" name="languageOption" style="display: none">
+							<option value="en" {% if localization.language.iso_code == 'en' %}selected{% endif %}>English</option>
+							<option value="ja" {% if localization.language.iso_code == 'ja' %}selected{% endif %}>日本語</option>
+						</select>
+						<select id="language-kr" class="language" name="languageOption" style="display: none">
+							<option value="en" {% if localization.language.iso_code == 'en' %}selected{% endif %}>English</option>
+							<option value="ko" {% if localization.language.iso_code == 'ko' %}selected{% endif %}>한국어</option>
+						</select>
+						<select id="language-tw" class="language" name="languageOption" style="display: none">
+							<option value="en" {% if localization.language.iso_code == 'en' %}selected{% endif %}>English</option>
+							<option value="zh" {% if localization.language.iso_code == 'zh-TW' %}selected{% endif %}>繁體中文</option>
+						</select>
+					</li>
+					<li><button id="save_btn">Save</button></li>
+				</ul>
+				{%- form 'localization', id: 'NcLocalizationForm' -%}
+					<input type="hidden" name="country_code" value="{{ localization.country.iso_code }}">
+					<input type="hidden" name="language_code" value="{{ localization.language.iso_code }}">
+					<input type="hidden" name="return_to" value="/">
+				{%- endform -%}
+			</div>
+		</div>
+	</div>
+</div>
+
+<style>
+	.toggle_custom_hidden {
+		display: none;
+	}
+
+	div.thb-secondary-area.thb-header-right {
+		position: relative;
+	}
+
+	.flag-trigger-img {
+		width: 23px;
+		height: 18px;
+		object-fit: contain;
+		border-radius: 2px;
+		display: block;
+	}
+
+	.flag-popup-overlay {
+		display: none;
+		position: absolute;
+		top: 65px;
+		right: 0;
+		z-index: 9999;
+		opacity: 0;
+		transition: opacity 0.3s ease;
+		align-items: center;
+	}
+
+	.flag-popup-overlay.active {
+		display: flex;
+		opacity: 1;
+	}
+
+	.flag-popup-container {
+		background: white;
+		border-radius: 12px;
+		box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+		padding: 15px;
+		max-width: 500px;
+		min-width: 180px;
+		width: 100%;
+		position: relative;
+		transform: scale(0.9);
+		transition: transform 0.3s ease;
+	}
+
+	.flag-popup-overlay.active .flag-popup-container {
+		transform: scale(1);
+	}
+
+	.flag-popup-close {
+		position: absolute;
+		top: 15px;
+		right: 15px;
+		background: transparent;
+		border: none;
+		cursor: pointer;
+		padding: 5px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: #666;
+		transition: color 0.2s ease;
+	}
+
+	.flag-popup-close:hover {
+		color: #000;
+	}
+
+	.flag-popup-content {
+		padding-top: 10px;
+	}
+
+	.flag-popup-content ul {
+		list-style: none;
+		padding: 0; margin: 0;
+	}
+
+	.flag-popup-content ul li {
+		padding: 0; margin: 0;
+	}
+
+	span#correct_region,
+	select#incorrect_region,
+	select.language,
+	button#save_btn {
+		height: auto;
+		border: 1px solid var(--color-form-border);
+		padding: 12px 17px;
+		margin: 5px 0px;
+		color: var(--color-body, #2c2d2e);
+		font-size: .8125rem;
+		font-weight: 400;
+		background: transparent;
+		width: 100%;
+		border-radius: 8px;
+		-webkit-appearance: none;
+		-moz-appearance: none;
+		appearance: none;
+	}
+
+	option.suggest_region {
+		font-weight: bold;
+	}
+
+	select#incorrect_region,
+	select.language {
+		background-image: url('data:image/svg+xml;utf8,<svg fill="black" height="16" width="16" xmlns="http://www.w3.org/2000/svg"><path d="M4 6l4 4 4-4z"/></svg>');
+		background-repeat: no-repeat;
+		background-position: right 10px center; /* adjust 40px as needed */
+		background-size: 12px;
+	}
+
+	button#save_btn {
+		background: grey;
+		color: #ffffff;
+	}
+
+	/* Custom Dropdown Styles */
+	.custom-dropdown {
+		position: relative;
+		width: 100%;
+	}
+
+	.custom-dropdown-selected,
+	#correct_region {
+		height: auto;
+		border: 1px solid var(--color-form-border);
+		padding: 12px 17px;
+		margin: 5px 0px;
+		color: var(--color-body, #2c2d2e);
+		font-size: .8125rem;
+		font-weight: 400;
+		background: transparent;
+		width: 100%;
+		border-radius: 8px;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		position: relative;
+	}
+
+	.custom-dropdown-selected:hover {
+		border-color: var(--color-body, #2c2d2e);
+	}
+
+	.flag-image-container,
+	#correct_region img {
+		display: inline-flex;
+		align-items: center;
+		width: 20px;
+		height: 16px;
+		flex-shrink: 0;
+	}
+
+	.flag-img {
+		width: 20px;
+		height: 16px;
+		object-fit: contain;
+		border-radius: 2px;
+		display: block;
+	}
+
+	.dropdown-arrow {
+		margin-left: auto;
+		color: var(--color-body, #2c2d2e);
+		transition: transform 0.2s ease;
+	}
+
+	.custom-dropdown.open .dropdown-arrow {
+		transform: rotate(180deg);
+	}
+
+	.custom-dropdown-options {
+		display: none;
+		position: absolute;
+		top: 100%;
+		left: 0;
+		right: 0;
+		background: white;
+		border: 1px solid var(--color-form-border);
+		border-radius: 8px;
+		margin-top: 5px;
+		max-height: 200px;
+		overflow-y: auto;
+		z-index: 1000;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+		color: var(--color-body, #2c2d2e);
+		font-size: .8125rem;
+		font-weight: 400;
+	}
+
+	.custom-dropdown.open .custom-dropdown-options {
+		display: block;
+	}
+
+	.custom-dropdown-option {
+		padding: 12px 17px;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		transition: background-color 0.2s ease;
+	}
+
+	.custom-dropdown-option:first-child {
+		border-top-left-radius: 8px;
+		border-top-right-radius: 8px;
+	}
+
+	.custom-dropdown-option:last-child {
+		border-bottom-left-radius: 8px;
+		border-bottom-right-radius: 8px;
+	}
+
+	.custom-dropdown-option:hover {
+		background-color: #f5f5f5;
+	}
+
+	.custom-dropdown-option.suggest_region_option {
+		/*font-weight: bold;*/
+	}
+
+	@media only screen and (max-width: 767px) {
+		a.thb-secondary-area-item.thb-quick-search {
+			display: none;
+		}
+
+		.flag-popup-overlay {
+			position: fixed;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+			background: rgba(0, 0, 0, 0.5);
+			z-index: 9999;
+			opacity: 0;
+			transition: opacity 0.3s ease;
+			align-items: center;
+			justify-content: center;
+		}
+
+		.flag-popup-overlay.active .flag-popup-container {
+			transform: scale(0.9);
+		}
+
+		.flag-popup-container {
+			position: absolute;
+			top: 10%;
+		}
+	}
+</style>
+
+<script type="text/javascript">
+	(function() {
+		const trigger = document.getElementById('flag-popup-trigger');
+		const overlay = document.getElementById('flag-popup-overlay');
+		const closeBtn = document.getElementById('flag-popup-close');
+		const container = document.getElementById('flag-popup-container');
+
+		if (!trigger || !overlay || !closeBtn) return;
+
+		// Flag image mapping
+		const flagImages = {
+			'hk': 'https://cdn.shopify.com/static/images/flags/hk.svg',
+			'jp': 'https://cdn.shopify.com/static/images/flags/jp.svg',
+			'kr': 'https://cdn.shopify.com/static/images/flags/kr.svg',
+			'tw': 'https://cdn.shopify.com/static/images/flags/tw.svg',
+			'cn': 'https://cdn.shopify.com/s/files/1/1279/4609/files/globe_23.png'
+		};
+
+		const regionNames = {
+			'hk': 'Hong Kong',
+			'jp': 'Japan',
+			'kr': 'South Korea',
+			'tw': 'Taiwan',
+			'cn': 'International'
+		};
+
+		// Function to update trigger icon
+		function updateTriggerIcon(regionValue) {
+			const globeIcon = document.getElementById('globe-icon');
+			const flagTriggerIcon = document.getElementById('flag-trigger-icon');
+			if (regionValue && flagImages[regionValue] && globeIcon && flagTriggerIcon) {
+				flagTriggerIcon.src = flagImages[regionValue];
+				flagTriggerIcon.alt = regionNames[regionValue] || '';
+				flagTriggerIcon.style.display = 'block';
+				globeIcon.style.display = 'none';
+			} else if (globeIcon && flagTriggerIcon) {
+				flagTriggerIcon.style.display = 'none';
+				globeIcon.style.display = 'block';
+			}
+		}
+
+		// Initialize custom dropdown (make it globally accessible)
+		window.initCustomDropdown = function() {
+			const customDropdown = document.getElementById('custom_region_dropdown');
+			const hiddenSelect = document.getElementById('incorrect_region');
+			const selectedText = document.getElementById('selected_region_text');
+			const selectedFlagImg = document.getElementById('selected_flag_img');
+			const dropdownOptions = document.querySelectorAll('.custom-dropdown-option');
+
+			if (!customDropdown || !hiddenSelect) return;
+
+			// Set initial selected value
+			const initialValue = hiddenSelect.value;
+			if (initialValue && flagImages[initialValue]) {
+				selectedText.textContent = regionNames[initialValue];
+				selectedFlagImg.src = flagImages[initialValue];
+				selectedFlagImg.alt = regionNames[initialValue];
+				selectedFlagImg.style.display = 'block';
+			}
+
+			// Toggle dropdown
+			const dropdownSelected = customDropdown.querySelector('.custom-dropdown-selected');
+			dropdownSelected.addEventListener('click', function(e) {
+				e.stopPropagation();
+				customDropdown.classList.toggle('open');
+			});
+
+			// Handle option selection
+			dropdownOptions.forEach(option => {
+				option.addEventListener('click', function(e) {
+					e.stopPropagation();
+					const value = this.getAttribute('data-value');
+					const flag = this.getAttribute('data-flag');
+					const text = this.querySelector('span').textContent;
+
+					// Update hidden select
+					hiddenSelect.value = value;
+					
+					// Update display
+					if (value && flag) {
+						selectedText.textContent = text;
+						selectedFlagImg.src = flag;
+						selectedFlagImg.alt = text;
+						selectedFlagImg.style.display = 'block';
+						// Update trigger icon when region is selected
+						updateTriggerIcon(value);
+					} else {
+						selectedText.textContent = text;
+						selectedFlagImg.style.display = 'none';
+						// Show globe icon if no region selected
+						updateTriggerIcon('');
+					}
+
+					// Close dropdown
+					customDropdown.classList.remove('open');
+
+					// Trigger change event on hidden select
+					const changeEvent = new Event('change', { bubbles: true });
+					hiddenSelect.dispatchEvent(changeEvent);
+				});
+			});
+
+			// Close dropdown when clicking outside
+			document.addEventListener('click', function(e) {
+				if (!customDropdown.contains(e.target)) {
+					customDropdown.classList.remove('open');
+				}
+			});
+		}
+
+		// Open popup
+		trigger.addEventListener('click', function(e) {
+			e.preventDefault();
+			overlay.classList.add('active');
+
+			// Initialize custom dropdown if not already initialized
+			if (!window.customDropdownInitialized && typeof window.initCustomDropdown === 'function') {
+				window.initCustomDropdown();
+				window.customDropdownInitialized = true;
+			}
+		});
+
+		// Region change -> show the matching language select (registered ONCE, not on every popup open)
+		document.getElementById("incorrect_region").addEventListener("change", function () {
+			if(this.value == 'cn') {
+				document.querySelectorAll('.language').forEach(el => {
+					el.style.display = 'none';
+				});
+				document.getElementById("language-cn").style.display = "inline-block";
+			}
+			if(this.value == 'hk') {
+				document.querySelectorAll('.language').forEach(el => {
+					el.style.display = 'none';
+				});
+				document.getElementById("language-hk").style.display = "inline-block";
+			}
+			if(this.value == 'jp') {
+				document.querySelectorAll('.language').forEach(el => {
+					el.style.display = 'none';
+				});
+				document.getElementById("language-jp").style.display = "inline-block";
+			}
+			if(this.value == 'kr') {
+				document.querySelectorAll('.language').forEach(el => {
+					el.style.display = 'none';
+				});
+				document.getElementById("language-kr").style.display = "inline-block";
+			}
+			if(this.value == 'tw') {
+				document.querySelectorAll('.language').forEach(el => {
+					el.style.display = 'none';
+				});
+				document.getElementById("language-tw").style.display = "inline-block";
+			}
+			updateTriggerIcon(this.value);
+		});
+
+		/*
+		 * Save: let Shopify build the URL.
+		 * We submit Shopify's native localization form (country_code + language_code + return_to).
+		 * return_to is the page path WITHOUT any locale prefix, so Shopify adds exactly one
+		 * correct prefix (/en-hk, /zh-hk, /ja ...). If a language isn't enabled for the chosen
+		 * market, Shopify falls back to that market's default language instead of a 404.
+		 */
+		const NC_COUNTRY_MAP = { hk: 'HK', cn: 'CN', jp: 'JP', kr: 'KR', tw: 'TW' };
+		// Theme option value -> Shopify language iso code (check Settings > Languages)
+		const NC_LANGUAGE_MAP = { en: 'en', zh: 'zh-TW', ja: 'ja', ko: 'ko' };
+		const NC_CURRENT_COUNTRY = '{{ localization.country.iso_code | downcase }}';
+		const NC_TEMPLATE = '{{ template.name }}';
+
+		function ncStripLocalePrefix(path) {
+			// Remove the current root_url and any stacked locale folders left by the old
+			// switcher (e.g. /en-hk/ja-hk/en-hk/404 -> /404)
+			const localeSeg = /^\/[a-z]{2}(-[a-z]{2,4})?(?=\/|$)/i;
+			let clean = path;
+			while (localeSeg.test(clean)) {
+				clean = clean.replace(localeSeg, '');
+			}
+			return clean === '' ? '/' : clean;
+		}
+
+		function ncBuildReturnTo(targetRegion) {
+			if (NC_TEMPLATE == '404') return '/';
+			let path = ncStripLocalePrefix(window.location.pathname);
+
+			// Keep the existing HK product-handle convention (HK products end in "-hk")
+			if (NC_TEMPLATE == 'product') {
+				const m = path.match(/^\/products\/([^\/?#]+)(.*)$/);
+				if (m) {
+					let handle = m[1];
+					if (targetRegion == 'hk' && !/-hk$/.test(handle)) handle = handle + '-hk';
+					if (targetRegion != 'hk' && /-hk$/.test(handle)) handle = handle.replace(/-hk$/, '');
+					path = '/products/' + handle + m[2];
+				}
+			}
+			return path + window.location.search + window.location.hash;
+		}
+
+		document.getElementById("save_btn").addEventListener("click", function(e) {
+			e.preventDefault();
+
+			const correctRegionEl = document.getElementById("correct_region");
+			const incorrectRegion = document.getElementById("incorrect_region");
+			let region = (correctRegionEl && correctRegionEl.dataset.ip) || '';
+			if (!region && incorrectRegion && incorrectRegion.selectedIndex > -1) {
+				region = incorrectRegion.options[incorrectRegion.selectedIndex].value;
+			}
+			if (!region) region = NC_CURRENT_COUNTRY;
+
+			// Use only the FIRST visible language select (old code could join two values, e.g. "en,zh")
+			let langValue = 'en';
+			const visibleLang = Array.from(document.querySelectorAll('select.language'))
+				.find(function(s) { return s.offsetParent !== null; });
+			if (visibleLang) langValue = visibleLang.value;
+
+			const form = document.getElementById('NcLocalizationForm');
+			form.querySelector('input[name="country_code"]').value = NC_COUNTRY_MAP[region] || region.toUpperCase();
+			form.querySelector('input[name="language_code"]').value = NC_LANGUAGE_MAP[langValue] || langValue;
+			form.querySelector('input[name="return_to"]').value = ncBuildReturnTo(region);
+			form.submit();
+		});
+
+		// Close popup
+		function closePopup() {
+			overlay.classList.remove('active');
+		}
+
+		closeBtn.addEventListener('click', closePopup);
+
+		// Close when clicking outside
+		overlay.addEventListener('click', function(e) {
+			if (e.target === overlay) {
+				closePopup();
+			}
+		});
+
+		// Close on Escape key
+		document.addEventListener('keydown', function(e) {
+			if (e.key === 'Escape' && overlay.classList.contains('active')) {
+				closePopup();
+			}
+		});
+	})();
+
+	//fetch('https://ipinfo.io?token=7e42ddd84ed971') // Replace 'your-data.json' with the actual URL or path to your JSON data
+	fetch('https://ipinfo-api-two.vercel.app/api/ipinfo') // Replace 'your-data.json' with the actual URL or path to your JSON data
+	.then(response => {
+		if (!response.ok) {
+			throw new Error(`HTTP error! status: ${response.status}`);
+		}
+
+		return response.json(); // Parse the response body as JSON
+	})
+	.then(data => {
+		//console.log(data);
+
+		var ShopifyMarketCountry = '{{ localization.country.iso_code }}';
+		var ShopifyMarketCountry = ShopifyMarketCountry.toLowerCase();
+		var CurrentCountry = 'cn';
+		var Template = '{{ template.name }}';
+		var currentUrl = window.location.href;
+		var navlang = 'en';
+
+		//Redirection non admin only
+		if (window.Shopify && Shopify.designMode) {
+			//console.log('Redirect disabled');
+		} else {
+			/* Don't redirect - Temp fallbacks
+			if(ShopifyMarketCountry == 'cn') {
+				console.log(ShopifyMarketCountry);
+				console.log(data.country_code);
+				console.log(window.location.pathname);
+				console.log(navigator.language);
+				
+				if(data.country_code == 'HK') { 
+					const template = '{{ template.name }}';
+					if (!navigator.language.toLowerCase().startsWith('en')) {
+						navlang = 'zh';
+					}
+					if (template == 'product') {
+						window.location.href = 'https://www.nextcigar.com/' + navlang + '-hk' + window.location.pathname + '-hk';
+					} else {
+						window.location.href = 'https://www.nextcigar.com/' + navlang + '-hk' + window.location.pathname;
+					}
+				}
+				if(data.country_code == 'JP') { 
+					if (!navigator.language.toLowerCase().startsWith('en')) {
+						navlang = 'ja';
+					}
+					window.location.href = 'https://www.nextcigar.com/' + navlang + '-jp' + window.location.pathname; 
+				}
+				if(data.country_code == 'KR') { 
+					if (!navigator.language.toLowerCase().startsWith('en')) {
+						navlang = 'ko';
+					}
+					window.location.href = 'https://www.nextcigar.com/' + navlang + '-kr' + window.location.pathname; 
+				}
+				if(data.country_code == 'TW') { 
+					if (!navigator.language.toLowerCase().startsWith('en')) {
+						navlang = 'zh';
+					}
+					window.location.href = 'https://www.nextcigar.com/' + navlang + '-tw' + window.location.pathname; 
+				}
+			}
+			*/
+		}
+
+		//console.log(ShopifyMarketCountry);
+		//console.log(data.country_code);
+
+		const boxes = document.querySelectorAll('.box');
+		if(data.country_code == 'HK' || 
+		   data.country_code == 'JP' || 
+		   data.country_code == 'KR' || 
+		   data.country_code == 'TW' || 
+		   ShopifyMarketCountry == 'hk' || 
+		   ShopifyMarketCountry == 'jp' || 
+		   ShopifyMarketCountry == 'kr' || 
+		   ShopifyMarketCountry == 'tw') {
+			boxes.forEach(box => {
+				box.classList.toggle('toggle_custom_hidden');
+			});
+		}
+		
+		if(data.country_code == 'HK') { CurrentCountry = 'hk'; }
+		if(data.country_code == 'JP') { CurrentCountry = 'jp'; }
+		if(data.country_code == 'KR') { CurrentCountry = 'kr'; }
+		if(data.country_code == 'TW') { CurrentCountry = 'tw'; }
+
+		if(CurrentCountry == ShopifyMarketCountry) {
+			const correctRegionEl = document.getElementById("correct_region");
+
+			const flagImages = {
+				'hk': 'https://cdn.shopify.com/static/images/flags/hk.svg',
+				'jp': 'https://cdn.shopify.com/static/images/flags/jp.svg',
+				'kr': 'https://cdn.shopify.com/static/images/flags/kr.svg',
+				'tw': 'https://cdn.shopify.com/static/images/flags/tw.svg',
+				'cn': 'https://cdn.shopify.com/s/files/1/1279/4609/files/globe_23.png'
+			};
+
+			const regionNames = {
+				'hk': 'Hong Kong',
+				'jp': 'Japan',
+				'kr': 'South Korea',
+				'tw': 'Taiwan',
+				'cn': 'International'
+			};
+
+			// Make updateTriggerIcon globally accessible
+			window.updateTriggerIcon = function(regionValue) {
+				const globeIcon = document.getElementById('globe-icon');
+				const flagTriggerIcon = document.getElementById('flag-trigger-icon');
+				if (regionValue && flagImages[regionValue] && globeIcon && flagTriggerIcon) {
+					flagTriggerIcon.src = flagImages[regionValue];
+					flagTriggerIcon.alt = regionNames[regionValue] || '';
+					flagTriggerIcon.style.display = 'block';
+					globeIcon.style.display = 'none';
+				} else if (globeIcon && flagTriggerIcon) {
+					flagTriggerIcon.style.display = 'none';
+					globeIcon.style.display = 'block';
+				}
+			};
+
+			if(ShopifyMarketCountry == 'cn') {
+				correctRegionEl.innerHTML = '<img src="' + flagImages['cn'] + '" alt="International" class="flag-img"> <span>International</span>';
+				window.updateTriggerIcon('cn');
+				correctRegionEl.setAttribute("data-ip", "cn");
+			} else {
+				if(ShopifyMarketCountry == 'hk') {
+					correctRegionEl.innerHTML = '<img src="' + flagImages['hk'] + '" alt="Hong Kong" class="flag-img"> <span>Hong Kong</span>';
+					correctRegionEl.setAttribute("data-ip", "hk");
+					window.updateTriggerIcon('hk');
+				}
+				if(ShopifyMarketCountry == 'jp') {
+					correctRegionEl.innerHTML = '<img src="' + flagImages['jp'] + '" alt="Japan" class="flag-img"> <span>Japan</span>';
+					correctRegionEl.setAttribute("data-ip", "jp");
+					window.updateTriggerIcon('jp');
+				}
+				if(ShopifyMarketCountry == 'kr') {
+					correctRegionEl.innerHTML = '<img src="' + flagImages['kr'] + '" alt="South Korea" class="flag-img"> <span>South Korea</span>';
+					correctRegionEl.setAttribute("data-ip", "kr");
+					window.updateTriggerIcon('kr');
+				}
+				if(ShopifyMarketCountry == 'tw') {
+					correctRegionEl.innerHTML = '<img src="' + flagImages['tw'] + '" alt="Taiwan" class="flag-img"> <span>Taiwan</span>';
+					correctRegionEl.setAttribute("data-ip", "tw");
+					window.updateTriggerIcon('tw');
+				}
+			}
+
+		} else {
+			const flagImages = {
+				'hk': 'https://cdn.shopify.com/static/images/flags/hk.svg?format=jpg&height=28&width=28',
+				'jp': 'https://cdn.shopify.com/static/images/flags/jp.svg?format=jpg&height=28&width=28',
+				'kr': 'https://cdn.shopify.com/static/images/flags/kr.svg?format=jpg&height=28&width=28',
+				'tw': 'https://cdn.shopify.com/static/images/flags/tw.svg?format=jpg&height=28&width=28',
+				'cn': 'https://cdn.shopify.com/s/files/1/1279/4609/files/globe_23.png'
+			};
+
+			const regionNames = {
+				'hk': 'Hong Kong',
+				'jp': 'Japan',
+				'kr': 'South Korea',
+				'tw': 'Taiwan',
+				'cn': 'International'
+			};
+
+			document.getElementById("correct_region").style.display = "none";
+			document.getElementById("incorrect_region").style.display = "none";
+			document.getElementById("custom_region_dropdown").style.display = "block";
+
+			// Initialize custom dropdown if not already initialized (after DOM updates)
+			setTimeout(function() {
+				if (!window.customDropdownInitialized && typeof window.initCustomDropdown === 'function') {
+					window.initCustomDropdown();
+					window.customDropdownInitialized = true;
+				}
+			}, 100);
+
+			// Update suggest_region option in hidden select
+			const suggestOption = document.querySelector(".suggest_region");
+			const suggestOptionCustom = document.querySelector(".suggest_region_option");
+			const selectedText = document.getElementById('selected_region_text');
+			const selectedFlagImg = document.getElementById('selected_flag_img');
+
+			if(CurrentCountry == 'cn') {
+				if(suggestOption) {
+					suggestOption.textContent = "International";
+					suggestOption.value = "cn";
+				}
+				if(suggestOptionCustom) {
+					suggestOptionCustom.setAttribute('data-value', 'cn');
+					suggestOptionCustom.setAttribute('data-flag', flagImages['cn']);
+					suggestOptionCustom.innerHTML = '<img src="' + flagImages['cn'] + '" alt="International" class="flag-img"> <span>International</span>';
+				}
+				if(selectedText) selectedText.textContent = "International";
+				if(selectedFlagImg) {
+					selectedFlagImg.src = flagImages['cn'];
+					selectedFlagImg.alt = "International";
+					selectedFlagImg.style.display = 'block';
+				}
+			}
+			if(CurrentCountry == 'hk') {
+				if(suggestOption) {
+					suggestOption.textContent = "Hong Kong";
+					suggestOption.value = "hk";
+				}
+				if(suggestOptionCustom) {
+					suggestOptionCustom.setAttribute('data-value', 'hk');
+					suggestOptionCustom.setAttribute('data-flag', flagImages['hk']);
+					suggestOptionCustom.innerHTML = '<img src="' + flagImages['hk'] + '" alt="Hong Kong" class="flag-img"> <span>Hong Kong</span>';
+				}
+				if(selectedText) selectedText.textContent = "Hong Kong";
+				if(selectedFlagImg) {
+					selectedFlagImg.src = flagImages['hk'];
+					selectedFlagImg.alt = "Hong Kong";
+					selectedFlagImg.style.display = 'block';
+				}
+			}
+			if(CurrentCountry == 'jp') {
+				if(suggestOption) {
+					suggestOption.textContent = "Japan";
+					suggestOption.value = "jp";
+				}
+				if(suggestOptionCustom) {
+					suggestOptionCustom.setAttribute('data-value', 'jp');
+					suggestOptionCustom.setAttribute('data-flag', flagImages['jp']);
+					suggestOptionCustom.innerHTML = '<img src="' + flagImages['jp'] + '" alt="Japan" class="flag-img"> <span>Japan</span>';
+				}
+				if(selectedText) selectedText.textContent = "Japan";
+				if(selectedFlagImg) {
+					selectedFlagImg.src = flagImages['jp'];
+					selectedFlagImg.alt = "Japan";
+					selectedFlagImg.style.display = 'block';
+				}
+			}
+			if(CurrentCountry == 'kr') {
+				if(suggestOption) {
+					suggestOption.textContent = "South Korea";
+					suggestOption.value = "kr";
+				}
+				if(suggestOptionCustom) {
+					suggestOptionCustom.setAttribute('data-value', 'kr');
+					suggestOptionCustom.setAttribute('data-flag', flagImages['kr']);
+					suggestOptionCustom.innerHTML = '<img src="' + flagImages['kr'] + '" alt="South Korea" class="flag-img"> <span>South Korea</span>';
+				}
+				if(selectedText) selectedText.textContent = "South Korea";
+				if(selectedFlagImg) {
+					selectedFlagImg.src = flagImages['kr'];
+					selectedFlagImg.alt = "South Korea";
+					selectedFlagImg.style.display = 'block';
+				}
+			}
+			if(CurrentCountry == 'tw') {
+				if(suggestOption) {
+					suggestOption.textContent = "Taiwan";
+					suggestOption.value = "tw";
+				}
+				if(suggestOptionCustom) {
+					suggestOptionCustom.setAttribute('data-value', 'tw');
+					suggestOptionCustom.setAttribute('data-flag', flagImages['tw']);
+					suggestOptionCustom.innerHTML = '<img src="' + flagImages['tw'] + '" alt="Taiwan" class="flag-img"> <span>Taiwan</span>';
+				}
+				if(selectedText) selectedText.textContent = "Taiwan";
+				if(selectedFlagImg) {
+					selectedFlagImg.src = flagImages['tw'];
+					selectedFlagImg.alt = "Taiwan";
+					selectedFlagImg.style.display = 'block';
+				}
+			}
+		}
+	})
+	.catch(error => {
+		console.error('Error fetching JSON:', error);
+	});
+</script>
