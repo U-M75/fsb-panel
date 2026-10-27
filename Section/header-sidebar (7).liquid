@@ -234,8 +234,7 @@
 {% render 'fsb-data',    section: section %}
 {% render 'fsb-scripts', section: section %}
 
-{% schema %}
-{
+{% schema %}{
   "name": "Floating Quick Sidebar",
   "settings": [
     {
@@ -247,8 +246,14 @@
       "id": "position",
       "label": "Screen Side",
       "options": [
-        { "value": "left", "label": "Left" },
-        { "value": "right", "label": "Right" }
+        {
+          "value": "left",
+          "label": "Left"
+        },
+        {
+          "value": "right",
+          "label": "Right"
+        }
       ],
       "default": "left"
     },
@@ -283,7 +288,7 @@
       "id": "hide_theme_header",
       "label": "Hide the theme's header on screen",
       "default": false,
-      "info": "Keep the Header section ENABLED in the theme editor — this only hides it visually (no space, no clicks), so the sidebar can still show the header's mobile menu. If the Header section is disabled/removed, the sidebar falls back to the simple link-list menu."
+      "info": "Keep the Header section ENABLED in the theme editor \u2014 this only hides it visually (no space, no clicks), so the sidebar can still show the header's mobile menu. If the Header section is disabled/removed, the sidebar falls back to the simple link-list menu."
     },
     {
       "type": "header",
@@ -404,6 +409,29 @@
       "default": 22
     },
     {
+      "type": "checkbox",
+      "id": "show_icon_tooltips",
+      "label": "Show icon names (hover + open drawers)",
+      "default": true,
+      "info": "Hovering an icon shows its name beside the bar, and while any drawer is open every icon shows its name. Labels come from each icon's \"Mobile Label\" text. Hidden on mobile, where the labels already sit under the icons."
+    },
+    {
+      "type": "color",
+      "id": "tooltip_bg_color",
+      "label": "Icon name background (cream)",
+      "default": "#f8eee2"
+    },
+    {
+      "type": "range",
+      "id": "tooltip_label_size",
+      "label": "Icon name font size (drawer open)",
+      "min": 10,
+      "max": 18,
+      "step": 1,
+      "unit": "px",
+      "default": 13
+    },
+    {
       "type": "header",
       "content": "Side Panel"
     },
@@ -463,7 +491,7 @@
       "type": "text",
       "id": "account_text",
       "label": "Account Mobile Label",
-      "default": "Account"
+      "default": "Profile"
     },
     {
       "type": "color",
@@ -534,7 +562,7 @@
       "type": "text",
       "id": "home_text",
       "label": "Home Mobile Label",
-      "default": "Home"
+      
     },
     {
       "type": "header",
@@ -598,7 +626,7 @@
       "type": "text",
       "id": "headphone_text",
       "label": "Support Mobile Label",
-      "default": "Support"
+      "default": "Customer Support"
     },
     {
       "type": "header",
@@ -627,7 +655,7 @@
       "type": "text",
       "id": "notification_text",
       "label": "Notification Mobile Label",
-      "default": "Notification"
+      "default": "Notifications"
     },
     {
       "type": "header",
@@ -656,7 +684,7 @@
       "type": "text",
       "id": "globe_text",
       "label": "Language Mobile Label",
-      "default": "Language"
+      "default": "Region & Language"
     },
     {
       "type": "header",
@@ -677,14 +705,14 @@
       "type": "link_list",
       "id": "mobile_menu_list",
       "label": "Menu to display (Mobile)",
-      "info": "Optional — pick a different menu to show only on mobile (below 767px). Leave blank to reuse the desktop menu above."
+      "info": "Optional \u2014 pick a different menu to show only on mobile (below 767px). Leave blank to reuse the desktop menu above."
     },
     {
       "type": "checkbox",
       "id": "use_theme_mobile_menu",
       "label": "Use the theme's mobile menu",
       "default": true,
-      "info": "Shows the exact same menu as the header hamburger inside this panel — same links, child links, mega-menu blocks, images, badges, login/register and track-order links. If disabled, the fallback menu built from the link lists above is used."
+      "info": "Shows the exact same menu as the header hamburger inside this panel \u2014 same links, child links, mega-menu blocks, images, badges, login/register and track-order links. If disabled, the fallback menu built from the link lists above is used."
     },
     {
       "type": "range",
@@ -698,11 +726,39 @@
       "type": "text",
       "id": "menu_text",
       "label": "Menu Mobile Label",
-      "default": "Menu"
+      "default": "More Information"
     },
     {
       "type": "header",
       "content": "Copyright Settings"
+    },
+    {
+      "type": "header",
+      "content": "Contact block (More Information menu)"
+    },
+    {
+      "type": "text",
+      "id": "contact_heading",
+      "label": "Contact heading",
+      "default": "Contact"
+    },
+    {
+      "type": "text",
+      "id": "contact_email",
+      "label": "Contact email",
+      "default": "support@nextcigar.com"
+    },
+    {
+      "type": "text",
+      "id": "contact_hours",
+      "label": "Opening times",
+      "default": "Mon-Fri: 10am-6pm"
+    },
+    {
+      "type": "text",
+      "id": "contact_hours_note",
+      "label": "Opening times note",
+      "default": "(Excluding Hong Kong Public Holidays)"
     },
     {
       "type": "header",
@@ -712,7 +768,7 @@
       "type": "text",
       "id": "copyright_text",
       "label": "Add Copyright Heading",
-      "default": "nextCIGAR © 2025"
+      "default": "nextCIGAR \u00a9 2025"
     },
     {
       "type": "color",
@@ -736,10 +792,22 @@
       "label": "Heading Text Transform",
       "default": "none",
       "options": [
-        { "value": "none", "label": "None" },
-        { "value": "uppercase", "label": "Uppercase" },
-        { "value": "lowercase", "label": "Lowercase" },
-        { "value": "capitalize", "label": "Capitalize" }
+        {
+          "value": "none",
+          "label": "None"
+        },
+        {
+          "value": "uppercase",
+          "label": "Uppercase"
+        },
+        {
+          "value": "lowercase",
+          "label": "Lowercase"
+        },
+        {
+          "value": "capitalize",
+          "label": "Capitalize"
+        }
       ]
     },
     {
@@ -774,10 +842,22 @@
       "label": "Description Text Transform",
       "default": "none",
       "options": [
-        { "value": "none", "label": "None" },
-        { "value": "uppercase", "label": "Uppercase" },
-        { "value": "lowercase", "label": "Lowercase" },
-        { "value": "capitalize", "label": "Capitalize" }
+        {
+          "value": "none",
+          "label": "None"
+        },
+        {
+          "value": "uppercase",
+          "label": "Uppercase"
+        },
+        {
+          "value": "lowercase",
+          "label": "Lowercase"
+        },
+        {
+          "value": "capitalize",
+          "label": "Capitalize"
+        }
       ]
     },
     {
@@ -826,13 +906,13 @@
       "type": "text",
       "id": "bon_api_base",
       "label": "BON Loyalty API base URL (advanced)",
-      "info": "Points/rewards/tiers/history are read live from the BON customer metafields (recommended) and from any BON widget on the page — no API is required. BON's real GraphQL API needs a secret server-side token, so a theme alone cannot call it securely. Leave this blank."
+      "info": "Points/rewards/tiers/history are read live from the BON customer metafields (recommended) and from any BON widget on the page \u2014 no API is required. BON's real GraphQL API needs a secret server-side token, so a theme alone cannot call it securely. Leave this blank."
     },
     {
       "type": "text",
       "id": "klaviyo_public_key",
       "label": "Klaviyo public API key (site ID, e.g. AbCdEf)",
-      "info": "Optional. Needed only if you want the marketing toggle to also subscribe/unsubscribe in Klaviyo. Find it in Klaviyo → Settings → API keys (Public API Key)."
+      "info": "Optional. Needed only if you want the marketing toggle to also subscribe/unsubscribe in Klaviyo. Find it in Klaviyo \u2192 Settings \u2192 API keys (Public API Key)."
     },
     {
       "type": "url",
@@ -876,7 +956,7 @@
       "type": "text",
       "id": "address_text",
       "label": "Address Mobile Label",
-      "default": "Address"
+      "default": "Address Book"
     },
     {
       "type": "header",
@@ -910,6 +990,65 @@
       "type": "textarea",
       "id": "sale_message",
       "label": "Custom message (optional)"
+    },
+    {
+      "type": "header",
+      "content": "First-visit Region Popup"
+    },
+    {
+      "type": "checkbox",
+      "id": "region_popup_enable",
+      "label": "Show the region popup on the first visit",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "region_popup_heading",
+      "label": "Popup heading",
+      "default": "Please select your region before you start shopping."
+    },
+    {
+      "type": "text",
+      "id": "region_popup_hk_label",
+      "label": "Hong Kong option label",
+      "default": "Hong Kong"
+    },
+    {
+      "type": "text",
+      "id": "region_popup_intl_label",
+      "label": "International option label",
+      "default": "International"
+    },
+    {
+      "type": "text",
+      "id": "region_intl_country_code",
+      "label": "International market country code",
+      "default": "US",
+      "info": "The country used to activate your International market (Settings -> Markets) when International is chosen - e.g. US. Leave it empty to use the first non-Hong Kong country automatically."
+    },
+    {
+      "type": "text",
+      "id": "region_hk_path",
+      "label": "Hong Kong market subfolder",
+      "default": "/en-hk",
+      "info": "The subfolder of your Hong Kong market (Settings -> Markets -> Hong Kong -> Domain / language), e.g. /en-hk. Choosing Hong Kong opens the store under this subfolder; International stays on the main domain. Leave empty to only switch the country inside the current market."
+    },
+    {
+      "type": "text",
+      "id": "region_hk_path_zh",
+      "label": "Hong Kong market subfolder (Chinese)",
+      "default": "/zh-hk",
+      "info": "Used instead of the subfolder above when the visitor's current language is Chinese. Leave empty to always use the English subfolder."
+    },
+    {
+      "type": "number",
+      "id": "region_popup_days",
+      "label": "Ask again after how many days (0 = every visit)",
+      "default": 30
+    },
+    {
+      "type": "paragraph",
+      "content": "The markets are switched by URL: Hong Kong opens the store under its subfolder (e.g. /en-hk), International returns to the main domain www.nextcigar.com. The choice is remembered in the browser, so the popup is not shown again until the days above have passed."
     }
   ],
   "presets": [
@@ -917,5 +1056,4 @@
       "name": "Floating Quick Sidebar"
     }
   ]
-}
-{% endschema %}
+}{% endschema %}
