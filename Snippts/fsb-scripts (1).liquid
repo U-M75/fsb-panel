@@ -1,5 +1,48 @@
 <!-- Snippet: fsb-scripts (sidebar + BON Loyalty logic) — rendered by sections/floating-sidebar.liquid -->
 <script>
+/* FIX (language switcher 404): strip EVERY leading locale/market folder from a path,
+   e.g. /en-hk/ja-hk/en-hk/products/x -> /products/x  and  /zh-TW/pages/y -> /pages/y.
+   All redirects below build on this clean path so prefixes can never stack again. */
+window.fsbCleanPath = function(path){
+  var p = String(path == null ? window.location.pathname : path);
+  /* matches /en, /ja, /zh-hans, /en-hk, /ja-hk, /zh-hant-hk ... */
+  var seg = /^\/[a-z]{2,3}(?:-[a-z0-9]{2,4}){0,2}(?=\/|$)/i;
+  var guard = 0;
+  while (seg.test(p) && guard < 10){ p = p.replace(seg, ''); guard++; }
+  if (!p || p.charAt(0) !== '/') p = '/' + p;
+  return p;
+};
+/* FIX v2: Hong Kong = ANY language folder ending in "-hk" (/en-hk, /ja-hk, /ko-hk,
+   /zh-hans-hk, /zh-hant-hk) or Shopify saying the market country is HK.
+   The old code only knew /en-hk and /zh-hk, so /ja-hk and /ko-hk were treated as
+   "not Hong Kong" and the saved-region redirect bounced visitors back to /en-hk. */
+window.fsbMarketCountry = '{{ localization.country.iso_code }}';
+window.fsbIsHkPath = function(path){
+  var p = String(path == null ? window.location.pathname : path);
+  return /^\/[a-z]{2,3}(?:-[a-z0-9]{2,4}){0,1}-hk(?=\/|$)/i.test(p);
+};
+window.fsbIsHk = function(){ return window.fsbIsHkPath() || window.fsbMarketCountry === 'HK'; };
+/* current language folder, taken from Shopify's own root url: "/" -> en, "/ja-hk" -> ja,
+   "/zh-hans" -> zh-hans. Market switches keep the visitor's language. */
+window.fsbLangFolder = (function(){
+  var root = String('{{ routes.root_url }}' || '/').replace(/\/+$/, '');
+  if (!root) return 'en';
+  return root.replace(/^\//, '').replace(/-hk$/i, '').toLowerCase() || 'en';
+})();
+/* FIX v3: HK and International have separate products - HK handles end in "-hk"
+   (same rule product-information.liquid uses). When the MARKET changes on a product
+   page, swap the handle so HK -> INT drops "-hk" and INT -> HK adds it. */
+window.fsbSwapHkHandle = function(path, wantHk){
+  var p = String(path || '/');
+  return p.replace(/(\/products\/)([^\/?#]+)/i, function(m, pre, handle){
+    var isHkHandle = /-hk$/i.test(handle);
+    if (wantHk && !isHkHandle) handle = handle + '-hk';
+    if (!wantHk && isHkHandle) handle = handle.replace(/-hk$/i, '');
+    return pre + handle;
+  });
+};
+window.fsbHkRoot  = function(){ return '/' + window.fsbLangFolder + '-hk'; };
+window.fsbIntRoot = function(){ return window.fsbLangFolder === 'en' ? '' : '/' + window.fsbLangFolder; };
 (function(){
   var sid = '{{ section.id }}';
   var sectionRoot = document.getElementById('sid-' + sid);
@@ -108,6 +151,8 @@
       /* keep the cart drawer above the fsb bar stack (z 1006) so it stays
          fully clickable when the left bar is open behind it */
       cartDrawer.style.setProperty('z-index', '1007', 'important');
+      fsbPersistOpenPanel('cart');
+      fsbClearClosed();
     }
   }
   /* ============================================================
@@ -143,16 +188,41 @@
     else { fsbSsDel(FSB_PANEL_KEY); fsbLsDel(FSB_PANEL_KEY); }
   }
   function fsbCurrentOpenPanelName(){
+    /* The theme cart lives OUTSIDE the FSB overlay, but it is still the
+       currently selected left tab and must survive right-page navigation. */
+    var cart = getCartDrawer();
+    if (cart && cart.classList.contains('active')) return 'cart';
     var act = overlay ? overlay.querySelector('.fsb-side-panel.active') : null;
     return act ? String(act.getAttribute('data-fsb-panel') || '') : '';
+  }
+  /* ============================================================
+     MEMBER-ONLY DRAWERS (v31)
+     "My Membership" and its siblings — Points, Rewards, Orders,
+     Address Book, order details and the address forms — belong to
+     the logged-in member area. They may NEVER open by themselves
+     for a visitor who is not logged in.
+     FSB_IS_LOGGED_IN is printed by Liquid at render time, so it is
+     always in sync with the real storefront session.
+     ============================================================ */
+  var FSB_IS_LOGGED_IN = {% if customer %}true{% else %}false{% endif %};
+  var FSB_MEMBER_PANELS = ['account', 'points', 'rewards', 'orders', 'address', 'add-address', 'orderdetail'];
+  function fsbIsMemberPanel(name){
+    if (!name) return false;
+    name = String(name);
+    if (FSB_MEMBER_PANELS.indexOf(name) !== -1) return true;
+    /* edit-address-<id> drawers are part of the member area as well */
+    return name.indexOf('edit-address') === 0;
   }
   /* visual close that KEEPS the bar's state so it re-opens by itself
      right after the upcoming page navigation */
   function fsbCloseKeepState(){
-    var keep = fsbCurrentOpenPanelName() || 'account';
+    /* Only ever restore what was actually open. The old 'account'
+       fallback meant that a visitor who was not logged in still got
+       the membership drawer pushed open on the next page load. */
+    var keep = fsbCurrentOpenPanelName();
     closeAllPanels();
     fsbClearClosed();
-    fsbPersistOpenPanel(keep);
+    if (keep) fsbPersistOpenPanel(keep);
   }
   /* the ONLY close that counts as "the customer closed it himself" */
   function fsbCustomerClose(){
@@ -169,6 +239,18 @@
   }
   window.addEventListener('beforeunload', fsbSnapshotKeep);
   window.addEventListener('pagehide', fsbSnapshotKeep);
+  /* The v10.10 cart observer lives in a separate script block below. Mirror
+     its real class changes into this script's existing tab storage. */
+  document.addEventListener('fsb:cart-state', function(e){
+    var d = e.detail || {};
+    if (d.open){
+      fsbPersistOpenPanel('cart');
+      fsbClearClosed();
+    } else if (d.wasOpen && fsbGetState(FSB_PANEL_KEY) === 'cart'){
+      fsbPersistOpenPanel('');
+      fsbMarkClosed();
+    }
+  });
   function closeAllPanels(){
     fsbPersistOpenPanel('');
     sectionRoot.classList.remove('fsb-region-panel-open');
@@ -215,6 +297,40 @@
     return window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
   }
 
+  /* v10: keep the contact block in the right place (position only).
+     Desktop (fallback menu): before the copyright.
+     Mobile (theme menu clone): the very bottom of the clone - policy
+     links, contact info, and LAST the Login / Register row (moved
+     as-is, never restyled). No styles change here. */
+  function fsbPlaceMenuContact(){
+    var menuPanel = document.getElementById('fsb-panel-menu-' + sid);
+    if (!menuPanel) return;
+    var contact = menuPanel.querySelector('.fsb-menu-contact');
+    var fallback = menuPanel.querySelector('.fsb-menu-fallback');
+    /* v10.2: the policy links live in the fallback menu - wherever they
+       are right now (fallback or already moved). On mobile they go to
+       the very BOTTOM of the theme menu clone, AFTER the theme footer,
+       so Login / Register keep their untouched original styling. The
+       node is MOVED, never copied, so nothing can appear twice. */
+    var policyList = menuPanel.querySelector('.fsb-menu-root');
+    if (isMobileViewport() && themeMenuInstalled){
+      var clone = document.getElementById('fsb-mobile-menu-' + sid);
+      if (!clone) return;
+      /* bottom order: policy links, contact info, then Login/Register
+         last (the row is MOVED as-is, so the theme's original styling
+         stays exactly the same) */
+      if (policyList) clone.appendChild(policyList);
+      if (contact) clone.appendChild(contact);
+      var settingsRow = clone.querySelector('.thb-mobile-menu-footer .settings-nav');
+      if (settingsRow) clone.appendChild(settingsRow);
+    } else {
+      if (!fallback) return;
+      var cr = fallback.querySelector('.footer-copyright-title');
+      if (policyList) fallback.insertBefore(policyList, cr);
+      if (contact) fallback.insertBefore(contact, cr);
+    }
+  }
+
   function syncThemeMenuForViewport(){
     if (!useThemeMenu) return;
     var menuPanel = document.getElementById('fsb-panel-menu-' + sid);
@@ -222,9 +338,11 @@
     if (isMobileViewport()) {
       if (!themeMenuInstalled) installThemeMenu();
       if (themeMenuInstalled) menuPanel.classList.add('fsb-theme-menu-active');
+      fsbPlaceMenuContact();
     } else {
       menuPanel.classList.remove('fsb-theme-menu-active');
       resetThemeMenu();
+      fsbPlaceMenuContact();
     }
   }
 
@@ -264,6 +382,7 @@
     slot.appendChild(clone);
     menuPanel.classList.add('fsb-theme-menu-active');
     themeMenuInstalled = true;
+    fsbPlaceMenuContact();
     console.log('[FSB] Theme mobile menu installed:', clone.querySelectorAll('.mobile-menu > li').length, 'top-level items.');
 
     /* mega-menu promo images use the theme lazy-load classes; make them
@@ -327,9 +446,10 @@
         return;
       }
       e.preventDefault();
-      /* Sidekick: following a link from the bar must NOT close it — the
-         same panel re-opens by itself once the page loads on the right. */
-      fsbCloseKeepState();
+      /* Mobile navigation must reveal the destination, not restore the
+         menu above it. Other drawers keep their existing Sidekick state. */
+      if (isMobileViewport()) fsbCustomerClose();
+      else fsbCloseKeepState();
       window.location.href = href;
     });
 
@@ -423,7 +543,7 @@
         rememberMobileSidebarPadding();
         rememberSidebarGeometry();
       }
-      /* mobile <-> desktop switch par theme/fallback menu sync */
+      /* keep the theme / fallback menu in sync when switching mobile <-> desktop */
       syncThemeMenuForViewport();
     });
   });
@@ -439,6 +559,7 @@
         var isOpen = cartDrawer.classList.contains('active');
         if (isOpen) {
           closeCart();
+          document.body.classList.remove('open-cc');
         } else {
           /* ONE drawer at a time: any open fsb drawer slides away first,
              then the cart drawer takes over (never stacked on top). */
@@ -449,28 +570,46 @@
       }
     });
   }
+  var cartCloseButtonObserver = null;
+  var cartCloseButtonTarget = null;
   function ensureCartCloseButton(){
     var cartDrawer = getCartDrawer();
-    if (!cartDrawer || cartDrawer.querySelector('.fsb-cart-close-btn')) return;
-    var btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'fsb-cart-close-btn';
-    btn.setAttribute('aria-label', 'Close cart');
-    btn.innerHTML = '<svg class="fsb-close-icon-desktop" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>' +
+    if (!cartDrawer) return;
+    /* Theme renderContents() replaces #Cart-Drawer.innerHTML after EVERY add.
+       The injected close button (and its click handler) must be reattached
+       after each replacement, not only during the first 500ms of page load. */
+    if (window.MutationObserver && cartDrawer !== cartCloseButtonTarget){
+      if (cartCloseButtonObserver) cartCloseButtonObserver.disconnect();
+      cartCloseButtonObserver = new MutationObserver(ensureCartCloseButton);
+      cartCloseButtonObserver.observe(cartDrawer, { childList: true });
+      cartCloseButtonTarget = cartDrawer;
+    }
+    var btn = cartDrawer.querySelector('.fsb-cart-close-btn');
+    if (btn && btn.__fsbCloseBound) return;
+    if (!btn){
+      btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'fsb-cart-close-btn';
+      btn.setAttribute('aria-label', 'Close cart');
+      btn.innerHTML = '<svg class="fsb-close-icon-desktop" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>' +
       '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="21" height="13" viewBox="0 0 21 13" focusable="false" role="presentation" data-garden-id="buttons.icon" data-garden-version="8.76.9" class="StyledIcon-sc-19meqgg-0 cxMMcO fsb-close-icon-mobile"><path fill-rule="evenodd" clip-rule="evenodd" fill="currentColor" d="M20.1005 2.7169L10.9931 11.8244C10.4724 12.3451 9.62815 12.3451 9.10745 11.8244L-8.00829e-06 2.7169L1.88561 0.831278L10.0503 8.99593L18.2149 0.831278L20.1005 2.7169Z"/></svg>';
+      cartDrawer.insertBefore(btn, cartDrawer.firstChild);
+    }
+    btn.__fsbCloseBound = true;
     btn.addEventListener('click', function(e){
       e.preventDefault();
       e.stopPropagation();
       closeCart();
+      document.body.classList.remove('open-cc');
       syncBodyState();
     });
-    cartDrawer.insertBefore(btn, cartDrawer.firstChild);
   }
   ensureCartCloseButton();
   var cartBtnRetry = setInterval(function(){
     ensureCartCloseButton();
     if (getCartDrawer()) clearInterval(cartBtnRetry);
   }, 500);
+  document.addEventListener('cart:item-added', ensureCartCloseButton);
   var cartCountBadge = document.getElementById('fsb-cart-count-' + sid);
   function updateCartCount(){
     fetch('/cart.js', { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
@@ -1016,7 +1155,9 @@
     pointsKnown:  bonNum(bonSeed.points) > 0,
     pointsEarned: bonNum(bonSeed.pointsEarned),
     rewardsCount: bonNum(bonSeed.rewardsCount),
-    tier:         String(bonSeed.tier || ''),
+    tier:         bonSeed.tier || '',
+    vipMoneySpent: null,
+    vipMoneySpentKnown: false,
     memberName:   String(bonSeed.customerName || ''),
     memberSince:  String(bonSeed.memberSince || ''),
     createdAt:    '',
@@ -1076,6 +1217,50 @@
     }
     return '';
   }
+  /* The BON customer VIP spending total is a different metric from Shopify
+     lifetime spend and from spending earned during this membership year.
+     Read it ONLY from explicit VIP-spend fields in the customer's BON data.
+     Never infer it from the current tier's required_value or points. */
+  function bonVipMoneyValue(v){
+    if (v === null || v === undefined || v === '') return null;
+    if (typeof v === 'object'){
+      if (Array.isArray(v)) return null;
+      return bonVipMoneyValue(v.amount !== undefined ? v.amount : v.value);
+    }
+    if (!/\d/.test(String(v))) return null;
+    var n = bonNum(v);
+    return isFinite(n) && n >= 0 ? n : null;
+  }
+  function bonVipMoneyFrom(o, keys){
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
+    for (var i = 0; i < keys.length; i++){
+      if (!Object.prototype.hasOwnProperty.call(o, keys[i])) continue;
+      var amount = bonVipMoneyValue(o[keys[i]]);
+      if (amount !== null) return amount;
+    }
+    return null;
+  }
+  function bonExtractVipMoney(d, tcd, customer){
+    var current = d.current_tier || (tcd && tcd.current_tier);
+    if (typeof current === 'string' && current.charAt(0) === '{'){
+      try { current = JSON.parse(current); } catch(e){ current = null; }
+    }
+    var ct = d.customer_tier || (customer && customer.customer_tier);
+    var fields = ['total_money_spent','totalMoneySpent','money_spent','moneySpent',
+      'vip_total_money_spent','vipMoneySpent','total_spent','totalSpent','spent'];
+    var sources = [current, current && current.progress,
+      current && current.customer_progress, current && current.spending,
+      tcd && tcd.vip_progress, tcd && tcd.progress,
+      d.vip_progress, ct && ct.vip_progress, ct && ct.progress, ct];
+    for (var i = 0; i < sources.length; i++){
+      var amount = bonVipMoneyFrom(sources[i], fields);
+      if (amount !== null) return amount;
+    }
+    /* A flattened field must explicitly say VIP/tier. Root total_spent,
+       money_spent and total_spending can mean lifetime customer spending. */
+    return bonVipMoneyFrom(d, ['vip_total_money_spent','vipMoneySpent',
+      'vip_money_spent','tier_total_money_spent','tier_money_spent','vip_spent']);
+  }
   function bonPoints(){ return bonNum(bonState.points); }
   function bonEarnedPoints(){
     var e = bonNum(bonState.pointsEarned);
@@ -1112,22 +1297,32 @@
     return '';
   }
   function bonCleanTier(value){
-    var t = value && typeof value === 'object'
-      ? String(value.name || value.tier_name || value.title || value.value || '')
-      : String(value || '');
-    t = t.trim().replace(/^['"]|['"]$/g, '').replace(/[\r\n]+/g, ' ');
+    if (value && typeof value === 'object'){
+      if (Array.isArray(value)) return '';
+      var nested = value.name || value.tier_name || value.title || value.tier_detail || value.tier || value.value;
+      return nested === value ? '' : bonCleanTier(nested);
+    }
+    var t = String(value || '').trim().replace(/^['"]|['"]$/g, '').replace(/[\r\n]+/g, ' ');
+    if (t.charAt(0) === '{'){
+      try { return bonCleanTier(JSON.parse(t)); } catch(e){ return ''; }
+    }
     if (!t || t === '[object Object]' || t.toLowerCase() === 'member') return '';
     if (/\b(view|learn more|membership)\b/i.test(t)) return '';
     return t.replace(/\s+member$/i, '').trim();
   }
-  function bonResolveTier(){
-    var t = bonCleanTier(bonTierFromTags());
-    if (t) return t;
-    t = bonCleanTier(bonState.tier);
-    if (t) return t;
-    var pts = bonEarnedPoints(), tiers = bonState.tiers || [], best = '';
-    for (var i = 0; i < tiers.length; i++){ if (pts >= tiers[i].min) best = tiers[i].name; }
-    if (best) return bonCleanTier(best);
+  function bonResolveTier(tiers){
+    /* BON's assigned tier first, Liquid metafield/cache fallback. A weak
+       customer tag only counts if it matches an actual program tier; generic
+       tags such as "vip" cannot impersonate a VIP tier. Points and Shopify
+       lifetime spend never assign the member's current VIP tier. */
+    var assigned = bonCleanTier(bonState.tier);
+    if (assigned) return assigned;
+    var tag = bonCleanTier(bonTierFromTags()), key = bonTierNameKey(tag);
+    if (!key) return '';
+    var rows = tiers || [];
+    for (var i = 0; i < rows.length; i++){
+      if (bonTierNameKey(rows[i].name) === key) return rows[i].name;
+    }
     return '';
   }
 
@@ -1177,7 +1372,8 @@
     if (!d) return false;
     if (d.points !== undefined) bonSetPoints(d.points, !!d.pointsKnown);
     if (d.rewardsCount) bonState.rewardsCount = bonNum(d.rewardsCount);
-    if (d.tier)         bonState.tier         = d.tier;
+    /* A cached tier must not overwrite a fresher Liquid customer metafield. */
+    if (d.tier && !bonCleanTier(bonSeed.tier)) bonState.tier = bonCleanTier(d.tier);
     if (d.memberName && !bonState.memberName) bonState.memberName = d.memberName;
     if (d.rewards && d.rewards.length) bonState.rewards = d.rewards;
     if (d.redeem  && d.redeem.length)  bonState.redeem  = d.redeem;
@@ -1211,11 +1407,11 @@
   }
 
   /* ============================================================
-     BON VIP TIERS — resolved LIVE from the BON Loyalty backend
-     (tier names, spend thresholds and tier icon images all come from
-     the BON app — nothing is configured in the theme).
-     Entry requirement = money spent (customer.total_spent).
-     ============================================================ */
+      BON VIP tier PROGRAM names, thresholds and artwork come from BON.
+      The member's current VIP tier is the assigned BON tier, not Shopify
+      lifetime spend or points. Annual qualifying spend is not available
+      from this seed, so no annual progress is calculated from it.
+      ============================================================ */
   /* ==========================================================
      BON VIP / B2B TIERS — FETCHED FROM THE BON LOYALTY BACKEND ONLY.
      There are NO tier settings in the theme (the merchant manages tiers,
@@ -1385,20 +1581,40 @@
       return { name: t.name, spend: t.spend, icon: chain[0] || '', iconChain: chain.slice(1) };
     });
   }
-  /* Warm the browser cache for the REAL tier icons as soon as the tier
-     program is known — by the time the drawer opens, the artwork is
-     already downloaded and shows instantly. */
+  /* An image that already loaded must remain ready in Membership, Points
+     AND Rewards. Keep only this page's image status (no stale cross-login
+     storage); a genuinely different tier/icon gets a different key. */
+  var bonTierImgStates = Object.create(null);
+  var bonTierImgPreloads = Object.create(null);
+  function bonTierArtKey(t){ return JSON.stringify([String(t.name || ''), String(t.icon || '')]); }
+  /* Preload each real tier icon only once; repeated BON renders previously
+     created a new Image() for every tier on EVERY panel opening. */
   function bonPreloadTierImgs(rows){
     try {
       (rows || []).forEach(function(t){
-        if (t && t.icon){ var im = new Image(); im.decoding = 'async'; im.src = t.icon; }
+        if (!t || !t.icon) return;
+        var key = bonTierArtKey(t);
+        if (bonTierImgPreloads[key]) return;
+        bonTierImgPreloads[key] = true;
+        var im = new Image();
+        im.decoding = 'async';
+        im.onload = function(){ bonTierImgStates[key] = { url: im.src }; };
+        im.src = t.icon;
       });
     } catch(e){}
     return rows;
   }
-  /* Tries the next candidate from data-fsb-icons; when the list is
-     exhausted removes the <img> AND the spinner underneath so neither a
-     broken image nor an endless loader remains. */
+  window.fsbTierImgOk = function(el){
+    var p = el.parentNode;
+    var key = p && p.getAttribute('data-fsb-tier-key');
+    if (key) bonTierImgStates[key] = { url: el.currentSrc || el.src };
+    el.style.opacity = '1';
+    var spinner = p && p.querySelector('.fsb-tier-art-fallback');
+    if (spinner) spinner.remove();
+  };
+  /* Keep the existing candidate chain for a never-loaded or changed tier.
+     Only AFTER every source failed remember failure, so opening another
+     drawer does not restart the same endless spinner / 404 sequence. */
   if (!window.fsbTierImgErr){
     window.fsbTierImgErr = function(el){
       try {
@@ -1409,6 +1625,8 @@
         }
       } catch(e){}
       var p = el.parentNode;
+      var key = p && p.getAttribute('data-fsb-tier-key');
+      if (key) bonTierImgStates[key] = { failed: true };
       el.remove();
       if (p){ var fb = p.querySelector('.fsb-tier-art-fallback'); if (fb) fb.remove(); }
     };
@@ -1439,36 +1657,26 @@
   function bonTierInfo(){
     var tiers = bonTiersResolved().slice();
     tiers.sort(function(a, b){ return bonNum(a.spend) - bonNum(b.spend); });
-    var spent = bonNum(bonSeed.totalSpent);
-    var cur = null, next = null;
-    for (var i = 0; i < tiers.length; i++){
-      if (spent >= bonNum(tiers[i].spend)) cur = tiers[i];
-      else { next = tiers[i]; break; }
-    }
-    if (!cur && tiers.length) cur = tiers[0];
-    if (cur){
-      for (var m = 0; m < tiers.length; m++){
-        if (tiers[m] === cur){ next = tiers[m + 1] || next; break; }
-      }
-    }
-    /* Tier is ALWAYS decided by the customer's total spend vs the tier $-spend
-       thresholds. Only when NO tier has a spend threshold at all do we trust
-       BON's own tier name (metafield / tag) as the tie-breaker. */
-    if (tiers.length && !tiers.some(function(t){ return bonNum(t.spend) > 0; })){
-      var tName = bonResolveTier();
-      if (tName){
-        var b = bonTierNameKey(tName);
-        for (var n = 0; n < tiers.length; n++){
-          var a = bonTierNameKey(tiers[n].name);
-          if (a && b && (a === b || b.indexOf(a) !== -1 || a.indexOf(b) !== -1)){
-            cur = tiers[n];
-            next = tiers[n + 1] || null;
-            break;
-          }
+    var assigned = bonResolveTier(tiers), cur = null, next = null;
+    if (assigned){
+      var key = bonTierNameKey(assigned);
+      for (var i = 0; i < tiers.length; i++){
+        if (bonTierNameKey(tiers[i].name) === key){
+          cur = tiers[i];
+          next = tiers[i + 1] || null;
+          break;
         }
       }
+      /* A newly assigned BON tier may precede the program artwork update.
+         Keep its actual name instead of silently downgrading to Robusto. */
+      if (!cur) cur = bonWithTierImgs([{ name: assigned, spend: 0, icon: '' }])[0];
+    } else if (tiers.length){
+      /* No verified assignment: show the program base tier, never infer VIP
+         status from historical spend or a retained points balance. */
+      cur = tiers[0];
+      next = tiers[1] || null;
     }
-    return { tiers: tiers, spent: spent, cur: cur, next: next };
+    return { tiers: tiers, spent: null, cur: cur, next: next };
   }
   /* Tier ARTWORK card — shows the member's tier IMAGE (from BON) as the
      card art. v23: while the image loads a plain centered SPINNER shows
@@ -1476,21 +1684,41 @@
      when no image exists at all the card simply stays clean/empty. */
   function bonTierCardMarkup(t){
     var raw = String(t.cur.name || '');
+    var key = bonTierArtKey(t.cur);
+    var ready = bonTierImgStates[key] || {};
+    var imgSrc = ready.url || t.cur.icon;
+    var hasImage = !!imgSrc && !ready.failed;
     var spin = '<div class="fsb-tier-art-fallback" aria-hidden="true">'
       + '<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#c79a3c" stroke-width="2.2" stroke-linecap="round" style="position:absolute;left:50%;top:50%;width:30px;height:30px;margin:-15px 0 0 -15px">'
       + '<circle cx="12" cy="12" r="9" opacity="0.22"/>'
       + '<path d="M21 12a9 9 0 0 0-9-9">'
       + '<animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite"/>'
       + '</path></svg></div>';
-    return '<div class="fsb-tier-art">'
-      + (t.cur.icon ? spin : '')
-      + (t.cur.icon ? '<img class="fsb-tier-art-img" src="' + bonEsc(t.cur.icon) + '" alt="' + bonEsc(raw) + '" loading="eager" style="opacity:0;transition:opacity .25s ease" onload="this.style.opacity=\'1\'" data-fsb-icons="' + bonEsc(JSON.stringify(t.cur.iconChain || [])) + '" onerror="fsbTierImgErr(this)">' : '')
+    return '<div class="fsb-tier-art" data-fsb-tier-key="' + bonEsc(key) + '">'
+      + (hasImage && !ready.url ? spin : '')
+      + (hasImage ? '<img class="fsb-tier-art-img" src="' + bonEsc(imgSrc) + '" alt="' + bonEsc(raw) + '" loading="eager" style="opacity:' + (ready.url ? '1' : '0') + ';transition:opacity .25s ease" onload="fsbTierImgOk(this)" data-fsb-icons="' + bonEsc(JSON.stringify(t.cur.iconChain || [])) + '" onerror="fsbTierImgErr(this)">' : '')
       + '</div>';
   }
   function bonTierCard(){
     var t = bonTierInfo();
     if (!t.cur) return '';
     return bonTierCardMarkup(t);
+  }
+  /* Change the points/list text when BON refreshes, but do NOT destroy an
+     unchanged, already loaded card image. Used in all three drawers that
+     display this artwork (Membership, Points and Rewards). */
+  function bonSetTierContent(host, trailingHtml){
+    var t = bonTierInfo();
+    var key = t.cur ? bonTierArtKey(t.cur) : '';
+    var art = host.querySelector(':scope > .fsb-tier-art');
+    if (art && key && art.getAttribute('data-fsb-tier-key') === key){
+      var img = art.querySelector('.fsb-tier-art-img');
+      if (img && img.complete && img.naturalWidth) window.fsbTierImgOk(img);
+      while (art.nextSibling) art.nextSibling.remove();
+      art.insertAdjacentHTML('afterend', trailingHtml);
+    } else {
+      host.innerHTML = (t.cur ? bonTierCardMarkup(t) : '') + trailingHtml;
+    }
   }
 
   // ============================================================
@@ -1693,20 +1921,22 @@
   function bonPointsCard(){
     bonFindPoints();
     var t = bonTierInfo();
-    var pct = 100, retain = '';
-    if (t.next){
-      var cmin = bonNum(t.cur ? t.cur.spend : 0), nmin = bonNum(t.next.spend);
-      pct = Math.max(0, Math.min(100, ((t.spent - cmin) / Math.max(1, (nmin - cmin))) * 100));
-      retain = 'Spend <b>' + bonMoney(Math.max(0, nmin - t.spent)) + '</b> more to unlock <b>' + bonEsc(t.next.name) + '</b>';
-    } else if (t.cur){
-      var _rn = String(t.cur.name || '').replace(/\s+member$/i, '');
-      retain = 'Spend <b>' + bonMoney(bonNum(t.cur.spend)) + '+</b> to retain <b>' + bonEsc(_rn) + '</b> tier';
+    /* Mirror BON's own VIP 'Total money spent' as BON VIP spending, NOT as
+       the newly reset membership year's qualifying spend. No spend-to-retain
+       claims, and no deduction from points or Shopify lifetime spending. */
+    var pct = 0;
+    var tierLabel = t.cur ? '<b>' + bonEsc(t.cur.name) + '</b> tier · ' : '';
+    var retain = tierLabel + 'Total money spent: —';
+    if (bonState.vipMoneySpentKnown){
+      var vipMoney = bonNum(bonState.vipMoneySpent);
+      var goal = bonNum(t.next ? t.next.spend : (t.cur ? t.cur.spend : 0));
+      if (goal > 0) pct = Math.max(0, Math.min(100, vipMoney / goal * 100));
+      retain = tierLabel + 'Total money spent: <b>' + bonMoney(vipMoney) + '</b>';
     }
     var expTxt = bonExpiryLine();
     var expLine = expTxt ? '<div class="fsb-ly-pts-exp">' + expTxt + '</div>' : '';
-    /* optional diagnostics: open any page with ?fsb-tiers-debug=1 and the
-       points card shows EXACTLY what the BON API returned for the tier
-       program (raw value) + what the theme parsed + the customer's spend */
+    /* Optional diagnostics: show BON's raw/parsed tier program. Shopify
+       lifetime spend is labeled explicitly; it is NOT annual VIP progress. */
     var dbgHtml = '';
     try {
       if (/[?&]fsb-tiers-debug=1/.test(String(location.search))){
@@ -1718,7 +1948,8 @@
           + '<br>parsed($): ' + bonEsc(JSON.stringify((bonState.tierRowsApi || []).map(function(r){
               return { name: r.name, spend: r.spend };
             })))
-          + '<br>spent($): ' + bonEsc(String(bonNum(bonSeed.totalSpent)))
+          + '<br>Shopify lifetime spend (not VIP progress): ' + bonEsc(String(bonNum(bonSeed.totalSpent)))
+          + '<br>BON VIP money spent: ' + (bonState.vipMoneySpentKnown ? bonEsc(String(bonState.vipMoneySpent)) : 'not returned')
           + '</div>';
       }
     } catch(e){}
@@ -2005,13 +2236,13 @@
     }
 
     if (el) {
-      el.innerHTML = '<div class="fsb-ly">'
-        + bonTierCard()
-        + bonPointsCard()
+      var tierBody = el.querySelector(':scope > .fsb-ly');
+      if (!tierBody){ el.innerHTML = '<div class="fsb-ly"></div>'; tierBody = el.firstElementChild; }
+      bonSetTierContent(tierBody,
+        bonPointsCard()
         + (scope === 'points' ? '' : bonTabs(scope))
         + listHtml
-        + hint
-        + '</div>';
+        + hint);
       bonBindPanel(el, scope);
     }
 
@@ -2560,26 +2791,35 @@
 
   function bonApplyProxy(d){
     if (!d) return false;
-    if (d.points !== undefined && d.points !== null) bonSetPoints(d.points, true);
-    var pe = bonNum(d.points_earned);
+    /* Accept both flattened proxy results and BON's nested customer shape;
+       balance and tier stay separate fields. */
+    var customer = (d.data && d.data.customer) || d.customer || d;
+    if (!customer || typeof customer !== 'object') customer = d;
+    var apiPoints = d.points !== undefined ? d.points : customer.points;
+    if (apiPoints !== undefined && apiPoints !== null) bonSetPoints(apiPoints, true);
+    var pe = bonNum(d.points_earned !== undefined ? d.points_earned : customer.points_earned);
     if (pe > 0) bonState.pointsEarned = pe;
-    if (d.tier) bonState.tier = bonCleanTier(d.tier);
-    if (d.customer_tier && d.customer_tier.name) bonState.tier = String(d.customer_tier.name);
+    /* A cached VIP name is only a temporary display while BON loads. */
+    bonState.tier = bonCleanTier(bonSeed.tier);
+    /* A named current tier from the BON proxy outranks the metafield;
+       explicit customer_tier/current_tier below take final precedence. */
+    var flatTier = bonCleanTier(d.tier);
+    if (flatTier) bonState.tier = flatTier;
+    var customerTier = bonCleanTier(d.customer_tier || customer.customer_tier);
+    if (customerTier) bonState.tier = customerTier;
     var px = bonNum(bonPick(d, ['points_expiring','expiring_points','points_to_expire','expiring_point']));
     var pd = bonPick(d, ['points_expiry_date','points_expires_at','points_expire_at','points_expiring_date','point_expired_at']);
     if (pd && !(px > 0)) bonState.pointsExpiry = { amount: 0, date: String(pd) };
     if (px > 0 && pd) bonState.pointsExpiry = { amount: px, date: String(pd) };
-    /* DYNAMIC TIERS (v18) — the root `tier` query's tier_details (title +
-       required_value + icon) is the REAL tier program from the BON backend.
-       It always wins: editing or adding a tier in the BON admin updates the
-       drawer automatically (names, $ thresholds, "spend to retain" lines).
-       NOTE: BON returns required_value in CENTS (verified: 10000 = $100),
-       so it is normalised to dollars here. */
-    var apiTiers = bonNormTierRows(d.tier_details || []);
+    /* BON tier program rows provide names, thresholds and artwork only.
+       The member's assigned current tier below controls which row is shown. */
+    var program = (d.data && d.data.tier) || (d.tier && typeof d.tier === 'object' ? d.tier : null);
+    var apiRows = d.tier_details || (program && program.tier_details) || [];
+    var apiTiers = bonNormTierRows(apiRows);
     if (apiTiers){
       /* keep the RAW api rows too (pre-normalisation) so the optional
          ?fsb-tiers-debug=1 overlay can show exactly what BON returned */
-      bonState.tierRowsRaw = Array.isArray(d.tier_details) ? d.tier_details : null;
+      bonState.tierRowsRaw = Array.isArray(apiRows) ? apiRows : null;
       bonState.tierRowsApi = apiTiers.map(function(t){
         var sv = bonNum(t.spend);
         /* BON **VIP Tiers** API: required_value is ALREADY in whole store
@@ -2589,19 +2829,20 @@
       });
       bonWriteCache();
     }
-    /* every tier's threshold on this program is a $-spend value
-       (entry_method = money milestone) -> always decide tier by spend */
+    /* Thresholds order the program rows, but cannot assign a member's tier. */
     var tierRows = d.tiers || d.vip_tiers || d.loyalty_tiers || d.tier_programs || d.b2b_tiers || [];
     var fetchedTiers = bonNormTierRows(tierRows);
     if (fetchedTiers) bonState.tierRows = fetchedTiers;
-    /* customer's live tier straight from BON (title), when provided */
-    var tcd = d.tier_customer_detail;
-    if (tcd && tcd.current_tier){
-      var ctn = bonPick(tcd.current_tier, ['title','name','tier_name'])
-             || (tcd.current_tier.tier_detail ? tcd.current_tier.tier_detail.title : '')
-             || (tcd.current_tier.tier ? tcd.current_tier.tier.title : '');
-      if (ctn) bonState.tier = String(ctn);
-    }
+    /* BON's current_tier overrides tags, metafield and old cached data.
+       Also accept the nested tier-query shape in a raw GraphQL response. */
+    var tcd = d.tier_customer_detail || (program && program.tier_customer_detail);
+    var currentTier = bonCleanTier(d.current_tier || (tcd && tcd.current_tier));
+    if (currentTier) bonState.tier = currentTier;
+    /* An explicit BON VIP total can be displayed without pretending it is
+       membership-year spend. A missing field is NOT zero. */
+    var vipMoney = bonExtractVipMoney(d, tcd, customer);
+    bonState.vipMoneySpent = vipMoney;
+    bonState.vipMoneySpentKnown = vipMoney !== null;
     var normTiers = bonNormTiers(tierRows);
     if (normTiers.length) bonState.tiers = normTiers;
     var historyRows = d.point_histories || d.point_history || d.transactions || d.point_transactions || [];
@@ -2752,7 +2993,14 @@
     pointsTrigger.parentNode.replaceChild(newPointsTrigger, pointsTrigger);
     newPointsTrigger.addEventListener('click', function(e){
       e.preventDefault(); e.stopPropagation();
-      bonWaitForInitialPoints(2500).then(function(){ openPanel('points'); });
+      /* Remember this click now, but never let its delayed BON result steal
+         another drawer the customer picked while points were loading. */
+      fsbPersistOpenPanel('points');
+      fsbClearClosed();
+      bonWaitForInitialPoints(2500).then(function(){
+        if (fsbGetState(FSB_CLOSED_KEY) || fsbGetState(FSB_PANEL_KEY) !== 'points') return;
+        openPanel('points');
+      });
     });
   }
 
@@ -2762,7 +3010,14 @@
     rewardsTrigger.parentNode.replaceChild(newRewardsTrigger, rewardsTrigger);
     newRewardsTrigger.addEventListener('click', function(e){
       e.preventDefault(); e.stopPropagation();
-      bonWaitForInitialPoints(2500).then(function(){ openPanel('rewards'); });
+      /* Remember this click now, but never let its delayed BON result steal
+         another drawer the customer picked while points were loading. */
+      fsbPersistOpenPanel('rewards');
+      fsbClearClosed();
+      bonWaitForInitialPoints(2500).then(function(){
+        if (fsbGetState(FSB_CLOSED_KEY) || fsbGetState(FSB_PANEL_KEY) !== 'rewards') return;
+        openPanel('rewards');
+      });
     });
   }
 
@@ -2776,8 +3031,8 @@
     if(!sum) return;
     /* Same header as the Points and Rewards drawers:
        tier image card -> POINTS EARNED -> big number -> expiry line ->
-       thin gold progress bar -> spend-to-retain line. */
-    sum.innerHTML = bonTierCard() + bonPointsCard();
+       thin gold bar -> honest annual-progress-unavailable notice. */
+    bonSetTierContent(sum, bonPointsCard());
   }
   function accountTab(name){
     if(!accountPanel) return;
@@ -2917,6 +3172,19 @@
   });
   function openAccount(){ fsbOdInlineClose(); openPanel('account'); renderAccountSummary(); accountTab('profile'); if(bonState.cid&&!bonState.loaded) bonRefresh().then(renderAccountSummary); }
   if(accountTrigger){var ac=accountTrigger.cloneNode(true);accountTrigger.parentNode.replaceChild(ac,accountTrigger);ac.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();openAccount();});}
+  /* CHANGE v8.7: the account (My Membership) wrapper keeps its text label
+     OUTSIDE the trigger anchor — every other sidebar icon has its label
+     inside its own link — so taps on the text, or the gaps around it,
+     never reached the drawer handler and only the icon reacted. Forward
+     any tap on the wrapper that is not on a link to the live trigger so
+     text and icon behave the same. The logged-out logo wrapper (its label
+     also sits outside its link) gets the same forwarding. */
+  var accWrap=sectionRoot.querySelector('.account-mbl')||sectionRoot.querySelector('.fsb-logo-wrap > .mobile-order-item');
+  if(accWrap){accWrap.addEventListener('click',function(e){
+    if(e.target.closest('a'))return;
+    var trig=accWrap.querySelector('a');
+    if(trig){e.preventDefault();e.stopPropagation();trig.click();}
+  });}
   if(accountPanel){accountPanel.addEventListener('click',function(e){
     var tab=e.target.closest('[data-account-tab]');if(tab){e.preventDefault();fsbOdInlineClose();accountTab(tab.getAttribute('data-account-tab'));}
     /* Rewards sub-tabs (Available / Used / Expired) inside the membership drawer */
@@ -3065,6 +3333,144 @@
       valEl.textContent = isHk ? 'Hong Kong SAR' : 'International';
     }
   }
+
+  /* ---------------------------------------------------------------------
+     SHARED REGION API (used by the drawer AND by the first-visit region popup)
+     One selection must be reflected everywhere at once:
+       1. the Region & Language drawer (the option marked as current)
+       2. the Membership drawer (the Region row of the profile)
+       3. the browser memory (localStorage + country cookie) and the backend
+          (the same BON / GAS 'pref_set' call the Apply Changes button makes)
+     window.fsbSetRegion('HK') / window.fsbSetRegion('INT')
+     --------------------------------------------------------------------- */
+  function fsbRegionOptionIso(regionList, wantHk){
+    var iso = '';
+    if (!regionList) return iso;
+    regionList.querySelectorAll('.fsb-region-option').forEach(function(b){
+      var c = b.getAttribute('data-country');
+      if (!c) return;
+      if (wantHk ? (c === 'HK') : (c !== 'HK')) { if (!iso) iso = c; }
+    });
+    if (!iso && !wantHk) iso = 'HK';   /* never hand an empty code to Shopify */
+    return iso;
+  }
+
+  /* ---------------------------------------------------------------------
+     MARKET SWITCHING (Settings -> Markets)
+     Shopify only accepts countries of the CURRENT market on /localization,
+     so a real market switch needs the other market's subfolder (e.g. /intl,
+     set in the theme settings and created in Shopify admin first).
+     --------------------------------------------------------------------- */
+  var HK_PATH = (function(){
+    try {
+      var r = document.getElementById('sid-' + sid);
+      return String((r && r.getAttribute('data-hk-path')) || '').replace(/\/+$/, '');
+    } catch(e){ return ''; }
+  })();
+  var HK_PATH_ZH = (function(){
+    try {
+      var r = document.getElementById('sid-' + sid);
+      return String((r && r.getAttribute('data-hk-path-zh')) || '').replace(/\/+$/, '');
+    } catch(e){ return ''; }
+  })();
+  var CUR_LANG = '{{ localization.language.iso_code }}';
+  /* International lives on the main domain, Hong Kong under its subfolder(s) */
+  function fsbHkPath(){
+    return window.fsbHkRoot();   /* FIX v2: keep current language (/ja -> /ja-hk) */
+  }
+  function fsbHkPrefixes(){
+    var list = [];
+    if (HK_PATH) list.push(HK_PATH.toLowerCase());
+    if (HK_PATH_ZH && HK_PATH_ZH.toLowerCase() !== HK_PATH.toLowerCase()) list.push(HK_PATH_ZH.toLowerCase());
+    return list;
+  }
+  function fsbOnHk(p){
+    /* FIX v2: any "-hk" language folder counts as Hong Kong */
+    if (p == null) return window.fsbIsHk();
+    return window.fsbIsHkPath(p);
+  }
+  function fsbStripHk(p){
+    /* FIX: remove ALL locale folders (not only the HK ones) */
+    return window.fsbCleanPath(p == null ? window.location.pathname : p);
+  }
+  function fsbMarketTargetUrl(wantHk, path, search){
+    var rest = window.fsbSwapHkHandle(fsbStripHk(path == null ? window.location.pathname : path), wantHk);   /* FIX v3 */
+    var s = (search != null) ? String(search) : window.location.search;
+    if (wantHk){
+      var pref = fsbHkPath();
+      if (!pref) return '';
+      return window.location.origin + pref + (rest || '/') + s;
+    }
+    return window.location.origin + window.fsbIntRoot() + (rest || '/') + s;   /* FIX v2: keep language */
+  }
+  function fsbGoMarket(url){
+    try { if (window.__fsbNavStub) { window.__fsbNavStub(url); return; } } catch(e){}
+    window.location.href = url;
+  }
+  window.__fsbMarketApi = {
+    hkPath: function(){ return fsbHkPath(); },
+    onHk: fsbOnHk,
+    target: fsbMarketTargetUrl,
+    go: fsbGoMarket
+  };
+  /* one console line that always tells the truth about where the visitor is */
+  try { console.log('[FSB] Shopify market: "{{ localization.market.handle }}" · country: "{{ localization.country.iso_code }}" · region: ' + ((fsbOnHk() || '{{ localization.country.iso_code }}' === 'HK') ? 'Hong Kong' : 'International')); } catch(e){}
+  function fsbPushRegionToBackend(region){
+    /* the exact call the 'Apply Changes' button makes: BON backend via GAS */
+    var pushed = false;
+    try {
+      var base      = String((bonSeed && bonSeed.apiBase) || '').trim();
+      var email     = String((bonSeed && bonSeed.customerEmail) || '').trim();
+      var shopifyId = String((bonSeed && bonSeed.customerId) || '').trim();
+      if (base && (email || shopifyId)) {
+        var prefUrl = base.replace(/\/+$/, '') + '?action=pref_set'
+          + '&shopify_id=' + encodeURIComponent(shopifyId)
+          + '&email=' + encodeURIComponent(email)
+          + '&region=' + encodeURIComponent(region === 'HK' ? 'HK' : 'International');
+        fetch(prefUrl, { headers: { 'Accept': 'application/json' }, credentials: 'omit', keepalive: true }).catch(function(){});
+        pushed = true;
+      }
+    } catch(e){}
+    return pushed;
+  }
+  window.fsbSetRegion = function(regionKey, opts){
+    opts = opts || {};
+    var isHk = (regionKey === 'HK');
+    var result = { region: isHk ? 'HK' : 'INT', country: '', backend: false };
+
+    /* 1. Region & Language drawer: the same option becomes the current one */
+    var regionList = document.getElementById('fsb-region-list-' + sid);
+    var iso = fsbRegionOptionIso(regionList, isHk);
+    if (iso) {
+      result.country = iso;
+      pendingCountry = iso;
+      if (regionList) {
+        regionList.querySelectorAll('.fsb-region-option').forEach(function(b){
+          b.classList.toggle('is-current', b.getAttribute('data-country') === iso);
+        });
+      }
+      var cInp = document.getElementById('fsb-country-input-' + sid);
+      if (cInp) cInp.value = iso;
+    }
+
+    /* 2. Membership drawer: the Region row shows the same value */
+    if (typeof syncProfileRegionDisplay === 'function') syncProfileRegionDisplay(isHk ? 'HK' : 'INT');
+
+    /* 3. remember it exactly like the drawer does */
+    try {
+      localStorage.setItem('fsb_selected_region', isHk ? 'HK' : 'INT');
+      localStorage.setItem('fsb_region_gate_at', String(Date.now()));
+      if (iso) {
+        sessionStorage.setItem('fsb_country', iso);
+        document.cookie = '_shopify_country=' + encodeURIComponent(iso) + '; path=/; max-age=31536000; SameSite=Lax';
+        document.cookie = 'localization_country=' + encodeURIComponent(iso) + '; path=/; max-age=31536000; SameSite=Lax';
+      }
+    } catch(e){}
+
+    /* 4. backend (skipped only if the caller explicitly asks for it) */
+    if (opts.backend !== false) result.backend = fsbPushRegionToBackend(isHk ? 'HK' : 'International');
+    return result;
+  };
 
   /* ------------------------------------------------------------
      1. CUSTOMER PROFILE LANGUAGE (Membership Drawer)
@@ -3216,68 +3622,26 @@
     // 1. Set Langify cookies and localStorage
     setLangifyCookies(normCode, targetId);
 
-    // 2. Try registered Langify map from DOM
-    if (window.__fsbLangifyMap && (window.__fsbLangifyMap[normCode] || window.__fsbLangifyMap[targetId])) {
-      var targetHref = window.__fsbLangifyMap[normCode] || window.__fsbLangifyMap[targetId];
-      if (targetHref) {
-        window.location.href = targetHref;
-        return true;
-      }
+    /* 2. FIX: let Shopify build the URL. Submit the native /localization form with the
+       CURRENT country, the new language and a return_to WITHOUT any locale folder.
+       Shopify adds exactly one correct prefix; if the language is not enabled for this
+       market it falls back to the market's default language instead of a 404. */
+    var locForm    = document.getElementById('fsb-localization-form-' + sid);
+    var localeInp  = document.getElementById('fsb-locale-input-' + sid);
+    var langInp    = document.getElementById('fsb-language-input-' + sid);
+    var countryInp = document.getElementById('fsb-country-input-' + sid);
+    var returnInp  = document.getElementById('fsb-return-to-' + sid);
+    if (locForm) {
+      var code = (config && config.code) ? config.code : targetCode;
+      if (localeInp) localeInp.value = code;
+      if (langInp) langInp.value = code;
+      if (countryInp) countryInp.value = '{{ localization.country.iso_code }}';
+      if (returnInp) returnInp.value = window.fsbCleanPath() + window.location.search + window.location.hash;
+      try { HTMLFormElement.prototype.submit.call(locForm); return true; } catch(e){}
+      try { locForm.submit(); return true; } catch(e2){}
     }
 
-    // 3. Try native Langify switcher links in DOM
-    if (targetId || normCode) {
-      var selectors = [
-        'a.ly-languages-switcher-link[data-language="' + targetId + '"]',
-        'a.ly-custom-dropdown-list-element[data-language="' + targetId + '"]',
-        'a[data-language="' + targetId + '"]',
-        'a[data-language-id="' + targetId + '"]',
-        'a[data-lang-id="' + targetId + '"]',
-        'a[data-language-code="' + normCode + '"]',
-        'a[data-lang="' + normCode + '"]',
-        'a[hreflang="' + normCode + '"]',
-        '.ly-languages-switcher a[data-language="' + targetId + '"]',
-        '.langify-language-switcher a[data-language="' + targetId + '"]',
-        '[class*="langify"] a[data-language="' + targetId + '"]'
-      ];
-      for (var i = 0; i < selectors.length; i++) {
-        var el = document.querySelector(selectors[i]);
-        if (el && !el.closest('.fsb-side-panel')) {
-          try {
-            el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-            if (typeof el.click === 'function') el.click();
-            var href = el.getAttribute('href');
-            if (href && href !== '#' && !href.startsWith('javascript:')) {
-              window.location.href = href;
-              return true;
-            }
-          } catch(e){}
-        }
-      }
-    }
-
-    // 4. Try Langify JS APIs
-    try {
-      if (window.langify && window.langify.switcher && typeof window.langify.switcher.switchLanguage === 'function') {
-        window.langify.switcher.switchLanguage(targetId || normCode);
-        return true;
-      } else if (window.ly && typeof window.ly.switch === 'function') {
-        window.ly.switch(targetId || normCode);
-        return true;
-      } else if (window.langify && typeof window.langify.switchLanguage === 'function') {
-        window.langify.switchLanguage(targetId || normCode);
-        return true;
-      }
-    } catch(e){}
-
-    // 5. Navigate to calculated localized URL / hreflang URL
-    var destUrl = getTargetLocaleUrl(normCode);
-    if (destUrl) {
-      window.location.href = destUrl;
-      return true;
-    }
-
-    // 6. Reload fallback
+    // 3. Fallback: reload
     window.location.reload();
     return true;
   }
@@ -3291,7 +3655,9 @@
     var currentCountry = '{{ localization.country.iso_code }}';
     var savedRegion = '';
     try { savedRegion = localStorage.getItem('fsb_selected_region') || ''; } catch(e){}
-    var isHk = (savedRegion === 'HK') || (!savedRegion && currentCountry === 'HK');
+    /* Shopify Markets is the source of truth for where the visitor is
+       (the market's country, or being on the Hong Kong subfolder) */
+    var isHk = (currentCountry === 'HK') || fsbOnHk() || (!currentCountry && savedRegion === 'HK');
 
     syncProfileRegionDisplay(isHk ? 'HK' : 'INT');
 
@@ -3374,11 +3740,13 @@
     var currentCountry = '{{ localization.country.iso_code }}';
     var savedRegion = '';
     try { savedRegion = localStorage.getItem('fsb_selected_region') || ''; } catch(e){}
-    var wasHk = (savedRegion === 'HK') || (!savedRegion && currentCountry === 'HK');
+    var wasHk = (currentCountry === 'HK') || fsbOnHk() || (!currentCountry && savedRegion === 'HK');
 
     var targetCountry = pendingCountry || currentCountry;
     var isTargetHk = (targetCountry === 'HK');
-    var regionChanged = (isTargetHk !== wasHk) || (targetCountry !== currentCountry);
+    /* only a market CROSSING is a change (the drawer has just the two regions,
+       not individual countries) */
+    var regionChanged = (isTargetHk !== wasHk);
 
     var currentLangIso = '{{ localization.language.iso_code }}'.toLowerCase();
     var targetLang = pendingLang || currentLangIso;
@@ -3395,7 +3763,27 @@
     // Update Profile pane region display immediately in Membership drawer
     syncProfileRegionDisplay(isTargetHk ? 'HK' : 'INT');
 
+    /* Crossing markets is done by URL - the only way Shopify switches markets:
+       Hong Kong lives under its subfolder (e.g. /en-hk), International on the
+       main domain. Inside one market the native /localization form below does
+       the country switch. */
+    if (regionChanged && HK_PATH && (isTargetHk ? !fsbOnHk() : fsbOnHk())) {
+      if (applyBtn){ applyBtn.textContent = 'Switching market…'; }
+      /* FIX: if a language was also picked, apply it after landing in the new market */
+      try { if (langChanged) sessionStorage.setItem('fsb_pending_lang_' + sid, pendingLang); } catch(e){}
+      fsbGoMarket(fsbMarketTargetUrl(isTargetHk));
+      return;
+    }
+
     if (!regionChanged && !langChanged) {
+      /* nothing to switch on the storefront - but if the stored region still
+         disagrees with the market the visitor is on, bring the backend along */
+      try {
+        if ((isTargetHk ? 'HK' : 'INT') !== savedRegion) {   /* savedRegion was read before the write above */
+          fsbPushRegionToBackend(isTargetHk ? 'HK' : 'International');
+          syncProfileRegionDisplay(isTargetHk ? 'HK' : 'INT');
+        }
+      } catch(e){}
       if (applyBtn){ applyBtn.disabled = false; applyBtn.textContent = 'Apply Changes'; }
       fsbCustomerClose();
       return;
@@ -3409,20 +3797,10 @@
     setLangifyCookies(normLang, lyId);
 
     // Send backend REGION update ONLY (Backend language is NEVER updated from this drawer)
-    var email = String(bonSeed.customerEmail || '').trim();
-    var shopifyId = String(bonSeed.customerId || '').trim();
-    var base = String(bonSeed.apiBase || '').trim();
-    if (regionChanged && (email || shopifyId) && base) {
-      var prefUrl = base.replace(/\/+$/, '') + '?action=pref_set'
-        + '&shopify_id=' + encodeURIComponent(shopifyId)
-        + '&email=' + encodeURIComponent(email)
-        + '&region=' + encodeURIComponent(isTargetHk ? 'HK' : 'International');
-      try {
-        fetch(prefUrl, { headers: { 'Accept': 'application/json' }, credentials: 'omit', keepalive: true }).catch(function(){});
-      } catch(e){}
-    }
+    if (regionChanged) fsbPushRegionToBackend(isTargetHk ? 'HK' : 'International');
 
-    var destUrl = langChanged ? getTargetLocaleUrl(normLang) : (window.location.pathname + window.location.search + window.location.hash);
+    /* FIX: return_to is always a clean path - Shopify adds the locale folder itself */
+    var destUrl = window.fsbCleanPath() + window.location.search + window.location.hash;
 
     // If region changed: submit Shopify native localization form
     if (regionChanged) {
@@ -3507,29 +3885,56 @@
   /* SIDEKICK behavior: bring the remembered panel back on every page load
      so the bar stays open while the right side changes (menu links,
      Information & Policies, coupon apply, cart...). It stays closed only
-     when the customer closed it himself. The classic first-visit default
-     — My Membership — remains the fallback when nothing was open yet.
+     when the customer closed it himself.
      v28: works on EVERY viewport — the old desktop-only guard is why
-     nothing ever came back on phones. */
+     nothing ever came back on phones.
+     v31: the membership drawers are member-only. My Membership never
+     greets a visitor who is not logged in — it is shown only once the
+     customer IS logged in (that is also why the guest storefront no
+     longer opens with a drawer sliding in on the first page view). */
   function initFirstVisitSidebar(){
     try {
       if (fsbGetState(FSB_CLOSED_KEY)) return;
+      /* This initializer runs at header parse-time, rAF AND DOMContentLoaded.
+         Never let a later run override a tab the customer already opened. */
+      if (fsbCurrentOpenPanelName()) return;
       var saved = fsbGetState(FSB_PANEL_KEY);
+      /* A membership drawer remembered from an earlier session (e.g. the
+         customer just logged out) must never be restored for a guest. */
+      if (saved && fsbIsMemberPanel(saved) && !FSB_IS_LOGGED_IN){
+        fsbPersistOpenPanel('');
+        saved = '';
+      }
       if (saved){
+        if (saved === 'cart'){
+          /* #Cart-Drawer appears AFTER this header script. Keep the saved
+             selection until DOMContentLoaded can find the real drawer. */
+          if (!getCartDrawer()) return;
+          openCart();
+          syncBodyState();
+          return;
+        }
         var target = overlay.querySelector('.fsb-side-panel[data-fsb-panel="' + saved + '"]');
         if (target){
           if (saved === 'points' || saved === 'rewards'){
             if (typeof bonWaitForInitialPoints === 'function'){
-              bonWaitForInitialPoints(2500).then(function(){ openPanel(saved); });
+              bonWaitForInitialPoints(2500).then(function(){
+                if (fsbGetState(FSB_CLOSED_KEY) || fsbGetState(FSB_PANEL_KEY) !== saved || fsbCurrentOpenPanelName()) return;
+                openPanel(saved);
+              });
               return;
             }
           }
-          if (saved === 'account'){ openAccount(); return; }
+          if (saved === 'account'){ if (!FSB_IS_LOGGED_IN) return; openAccount(); return; }
           openPanel(saved);
           return;
         }
         fsbPersistOpenPanel('');
       }
+      /* Nothing to restore: only a logged-in customer gets the membership
+         drawer opened for them. Guests keep the bar shut until they click
+         an icon themselves. */
+      if (!FSB_IS_LOGGED_IN) return;
       openAccount();
     } catch(e){}
   }
@@ -3538,7 +3943,718 @@
   document.addEventListener('DOMContentLoaded', initFirstVisitSidebar);
   window.requestAnimationFrame(initFirstVisitSidebar);
 
+  /* ============================================================
+     SIDEBAR LABELS (v32)
+     While ANY drawer/panel is open — or while the bar itself is
+     hovered — every icon shows its name beside the bar, like the
+     reference design. The bar widens, and --fsb-sidebar-span is
+     republished so the page content, the side panel and the cart
+     drawer all stay aligned with the new width.
+     Desktop only: on mobile the theme already prints the labels
+     under the icons.
+     ============================================================ */
+  var FSB_BASE_SPAN = {{ section.settings.icon_size | plus: section.settings.horizontal_padding | plus: section.settings.horizontal_padding | plus: section.settings.edge_offset }};
+  var FSB_EDGE     = {{ section.settings.edge_offset | default: 0 }};
+  var FSB_ICON     = {{ section.settings.icon_size | default: 22 }};
+  var FSB_LABEL_GAP = 11;
+
+  function fsbLabelsDesktop(){
+    return !window.matchMedia || window.matchMedia('(min-width: 768px)').matches;
+  }
+
+  /* The bar cannot be sized by CSS alone: the theme's own
+     ``.fsb-item svg{width:100%}`` collapses every icon to 0px as soon as a
+     row is allowed to grow, so the browser reports the bar's natural width
+     as if the names did not exist. These helpers measure the real name
+     widths instead, and the bar is then opened to that exact number. */
+  var fsbCanvas = null;
+  function fsbTextWidth(text, font){
+    if (!fsbCanvas) fsbCanvas = document.createElement('canvas').getContext('2d');
+    fsbCanvas.font = font;
+    return fsbCanvas.measureText(text).width;
+  }
+  function fsbLabelWidth(el){
+    var after = window.getComputedStyle(el, '::after');
+    var text = el.getAttribute('data-fsb-tip') || '';
+    if (!after || !text || after.display === 'none' || after.content === 'none') return 0;
+    return fsbTextWidth(text, after.fontWeight + ' ' + after.fontSize + ' ' + after.fontFamily) + 2;
+  }
+  /* how wide one row has to be: [padding][icon slot][gap][name]
+     Badges (absolute) are skipped, so a badge that happens to sit first in
+     the markup (the notification one does) can never be mistaken for the
+     icon. If nothing in the row has a layout box, the row keeps its icon
+     inside its own padding - that is the region row. */
+  function fsbRowWidth(el){
+    var st = window.getComputedStyle(el);
+    var pad = parseFloat(st.paddingLeft) || 0;
+    var gap = parseFloat(st.columnGap) || FSB_LABEL_GAP;
+    var kids = el.children, slot = 0;
+    for (var i = 0; i < kids.length; i++){
+      var cs = window.getComputedStyle(kids[i]);
+      if (cs.display === 'none' || cs.position === 'absolute') continue;
+      var w = kids[i].getBoundingClientRect().width;
+      if (w > 0.5){ slot = w; break; }
+    }
+    return slot ? (pad + slot + gap + fsbLabelWidth(el))
+                : (pad + fsbLabelWidth(el));
+  }
+  function fsbOpenWidth(){
+    var els = sectionRoot.querySelectorAll('[data-fsb-tip]'), max = 0, i;
+    for (i = 0; i < els.length; i++){
+      if (window.getComputedStyle(els[i]).display === 'none') continue;
+      var w = fsbRowWidth(els[i]);
+      if (w > max) max = w;
+    }
+    return max > 0 ? Math.ceil(max) : 0;
+  }
+  /* Publishes BOTH numbers the rest of the theme depends on:
+       --fsb-sidebar-span         how far the page / panel sit from the edge
+       --fsb-open-w               the bar's widened width in label mode
+       --fsb-stable-sidebar-width the bar's own frozen width (region panel)
+     --fsb-open-w is cleared first so the bar can measure itself closed, then
+     set, so the region panel's frozen width always matches the real width. */
+  function fsbPublishSpan(expanded){
+    var span = FSB_BASE_SPAN;
+    if (fsbLabelsDesktop()){
+      var cont = sectionRoot.querySelector('.fsb-container');
+      if (cont){
+        var edge = isNaN(parseFloat(FSB_EDGE)) ? 0 : parseFloat(FSB_EDGE);
+        var cs = window.getComputedStyle(cont);
+        var pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+        cont.style.removeProperty('--fsb-stable-sidebar-width');
+        var openW = expanded ? (fsbOpenWidth() + pad) : 0;
+        if (openW > 0) document.documentElement.style.setProperty('--fsb-open-w', openW + 'px');
+        else document.documentElement.style.removeProperty('--fsb-open-w');
+        /* read the width back after the bar has re-sized itself */
+        var w = Math.ceil(cont.getBoundingClientRect().width);
+        if (expanded && (w + edge) > span) span = w + edge;
+        if (w > 0) cont.style.setProperty('--fsb-stable-sidebar-width', w + 'px');
+      }
+    }
+    document.documentElement.style.setProperty('--fsb-sidebar-span', span + 'px');
+  }
+  /* ---- the hover / active tile --------------------------------------------
+     The tile is the row's ::before, 40x40, painted behind the icon (see
+     fsb-styles.liquid). Its spot cannot be computed from the row's padding:
+     on the live theme the icon slot and the artwork are not the same box - the
+     theme nudges/scales the icons with transforms - so a fixed margin leaves
+     the tile a few px off the icon. So we measure the icon that is really
+     there and hand the tile its exact centre through --fsb-tile-x / -y,
+     expressed against the very containing block the browser uses for the
+     absolutely positioned pseudo (nearest ancestor that is positioned or
+     transformed). Out of flow, the tile can never move bar/icon/name. */
+  /* The row ITSELF is usually the containing block: the theme (and our own
+     label CSS) makes these rows position:relative for the counters, so the
+     walk starts at the row and only falls back to an ancestor - transformed
+     ancestors become containing blocks too. */
+  function fsbIsTileHost(el){
+    var cs = window.getComputedStyle(el);
+    if (!cs) return false;
+    if (cs.position !== 'static') return true;
+    if (cs.transform && cs.transform !== 'none') return true;
+    if (cs.filter && cs.filter !== 'none') return true;
+    if (cs.perspective && cs.perspective !== 'none') return true;
+    if (cs.backdropFilter && cs.backdropFilter !== 'none') return true;
+    if (cs.willChange && /transform|filter|perspective/.test(cs.willChange)) return true;
+    if (cs.contain && /paint|layout|strict|content/.test(cs.contain)) return true;
+    return false;
+  }
+  function fsbTileHost(row){
+    var el = row;
+    while (el && el.nodeType === 1 && el !== document.body && el !== document.documentElement){
+      if (fsbIsTileHost(el)) return el;
+      el = el.parentNode;
+    }
+    return document.body;
+  }
+  /* the icon of a row: the region row keeps its artwork absolute, every other
+     row has it in flow. Badges (.thb-item-count) and the name span are never
+     the icon. */
+  function fsbIconOf(row){
+    var kids = row.children, art = null, first = null, i, k, cs, cls, r;
+    for (i = 0; i < kids.length; i++){
+      k = kids[i];
+      cs = window.getComputedStyle(k);
+      if (!cs || cs.display === 'none' || cs.visibility === 'hidden') continue;
+      cls = ' ' + (k.className || '') + ' ';
+      if (cls.indexOf('mobile-icon-title') > -1) continue;
+      if (cls.indexOf('thb-item-count') > -1) continue;
+      r = k.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) continue;
+      if (cs.position === 'absolute'){ if (!art) art = k; continue; }
+      if (!first) first = k;
+    }
+    return art || first;
+  }
+  function fsbPlaceTiles(){
+    if (!document.documentElement.classList.contains('fsb-tips-open')) return;
+    var rows = sectionRoot.querySelectorAll('.fsb-item, .mobile-order-item');
+    for (var i = 0; i < rows.length; i++){
+      var row = rows[i];
+      if (window.getComputedStyle(row).display === 'none'){
+        row.style.removeProperty('--fsb-tile-x'); row.style.removeProperty('--fsb-tile-dy'); continue;
+      }
+      var ic = fsbIconOf(row);
+      if (!ic){
+        row.style.removeProperty('--fsb-tile-x'); row.style.removeProperty('--fsb-tile-dy'); continue;
+      }
+      var ir = ic.getBoundingClientRect();
+      var rr = row.getBoundingClientRect();
+      var host = fsbTileHost(row);
+      var hr = host.getBoundingClientRect();
+      var hcs = window.getComputedStyle(host);
+      var bl = parseFloat(hcs.borderLeftWidth) || 0;
+      var bt = parseFloat(hcs.borderTopWidth) || 0;
+      /* 20 = half of the 40px tile. Vertically the CSS does the work (the tile
+         is centred in its row, which is at least 40px tall), so we only nudge
+         when the artwork really is not on the row's centre line. */
+      row.style.setProperty('--fsb-tile-x', Math.round(ir.left + ir.width / 2 - hr.left - bl - 20) + 'px');
+      var dy = Math.round((ir.top + ir.height / 2) - (rr.top + rr.height / 2));
+      if (dy > 1 || dy < -1) row.style.setProperty('--fsb-tile-dy', dy + 'px');
+      else row.style.removeProperty('--fsb-tile-dy');
+    }
+  }
+  /* the bar animates its width for half a second when a drawer opens, and the
+     icons settle with it - so measure now, next frame, and once more at rest */
+  function fsbPlaceTilesSoon(){
+    if (!document.documentElement.classList.contains('fsb-tips-open')) return;
+    fsbPlaceTiles();
+    window.requestAnimationFrame(fsbPlaceTiles);
+    window.requestAnimationFrame(function(){ window.requestAnimationFrame(fsbPlaceTiles); });
+    setTimeout(fsbPlaceTiles, 320);
+    setTimeout(fsbPlaceTiles, 580);
+  }
+  var fsbTileTick = false;
+  function fsbPlaceTilesOnChange(){
+    if (fsbTileTick || !document.documentElement.classList.contains('fsb-tips-open')) return;
+    fsbTileTick = true;
+    window.requestAnimationFrame(function(){ fsbTileTick = false; fsbPlaceTiles(); });
+  }
+
+  function fsbApplyLabels(want){
+    var on = !!want && fsbLabelsDesktop();
+    document.documentElement.classList.toggle('fsb-tips-open', on);
+    window.requestAnimationFrame(function(){ fsbPublishSpan(on); fsbPlaceTilesSoon(); });
+    if (!on) fsbPlaceTilesSoon();   /* clears the vars when the bar closes */
+  }
+  function fsbRefreshLabels(){
+    fsbApplyLabels(document.body.classList.contains('fsb-panel-open'));
+  }
+
+  /* 1) any drawer / panel open  ->  every name shows beside the bar.
+        Hovering a single icon keeps the floating pill (reference image 1),
+        so the bar is never expanded by the pointer itself. */
+  if (window.MutationObserver){
+    new MutationObserver(function(){
+      var open = document.body.classList.contains('fsb-panel-open');
+      if (open !== document.documentElement.classList.contains('fsb-tips-open')){
+        fsbRefreshLabels();
+      }
+    }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  }
+  /* 2) viewport changes */
+  window.addEventListener('resize', function(){ window.requestAnimationFrame(fsbRefreshLabels); });
+  window.addEventListener('orientationchange', function(){ window.requestAnimationFrame(fsbRefreshLabels); });
+  /* 3) if anything inside the bar moves on its own (a scrollable sidebar, the
+        cart count changing, an image loading), the icons move with it - so the
+        tile follows the icon instead of staying where it was measured. */
+  window.addEventListener('scroll', fsbPlaceTilesOnChange, true);
+  if (window.ResizeObserver){
+    try { new ResizeObserver(fsbPlaceTilesOnChange).observe(sectionRoot); } catch (e) {}
+  }
+  setTimeout(fsbPlaceTilesSoon, 900);
+
+  /* initial state (a drawer can already be open on load) */
+  fsbRefreshLabels();
   window.fsbClosePanels = closeAllPanels;
   window.fsbUpdateCartCount = updateCartCount;
 })();
+
+/* ==========================================================================
+   First-visit region gate
+   --------------------------------------------------------------------------
+   Shows the region selector (same Hong Kong / International options as the
+   Region & Language drawer) before the visitor starts shopping.
+     * The markets are switched by URL (Settings -> Markets): Hong Kong opens
+       the store under its subfolder (e.g. /en-hk), International returns to
+       the main domain. Without subfolders the country switches through
+       Shopify's own /localization endpoint inside the current market.
+   The choice is remembered in localStorage ('fsb_selected_region', the key the
+   drawer already uses) together with a timestamp, so the popup can come back
+   after N days (region_popup_days = 0 asks on every visit).
+   Closing it only skips it for the current session.
+   ========================================================================== */
+(function(){
+  var gate = document.querySelector('.fsb-region-gate');
+  if (!gate) return;
+  if (window.Shopify && window.Shopify.designMode) return;   /* theme editor: no auto-open */
+
+  var form       = gate.querySelector('[data-fsb-gate-form]');
+  var trigger    = gate.querySelector('[data-fsb-gate-trigger]');
+  var list       = gate.querySelector('[data-fsb-gate-list]');
+  var valueEl    = gate.querySelector('[data-fsb-gate-value]');
+  var continueEl = gate.querySelector('[data-fsb-gate-continue]');
+  var countryInp = form ? form.querySelector('input[name="country_code"]') : null;
+  var days       = parseFloat(form && form.getAttribute('data-days'));
+  if (isNaN(days)) days = 30;
+  var current    = (countryInp && countryInp.value) || 'HK';
+  var chosen     = current;
+
+  function read(store, key){ try { return store.getItem(key); } catch(e){ return null; } }
+  function write(store, key, val){ try { store.setItem(key, val); } catch(e){} }
+
+  function fresh(){
+    if (read(window.sessionStorage, 'fsb_region_gate_skip') === '1') return false;
+    var saved = read(window.localStorage, 'fsb_selected_region');
+    if (!saved) return true;
+    if (days <= 0) return true;
+    var ts = parseFloat(read(window.localStorage, 'fsb_region_gate_at'));
+    if (isNaN(ts)) return false;                 /* a choice from before this feature: respect it */
+    return (Date.now() - ts) > (days * 86400000);
+  }
+  function storedRegion(){
+    return read(window.localStorage, 'fsb_selected_region') || '';
+  }
+  function open(){
+    gate.hidden = false;
+    if (valueEl) valueEl.textContent = (current === 'HK')
+      ? (gate.getAttribute('data-hk-label') || valueEl.textContent)
+      : (gate.getAttribute('data-int-label') || valueEl.textContent);
+    /* come back with the region the visitor chose last time (the popup can
+       return after N days), so the popup never shows a different region
+       than the drawer and the membership row do */
+    /* Shopify Markets is the source of truth: the popup preselects the market
+       the visitor is on right now */
+    var wantHk = (current === 'HK');
+    var opts = gate.querySelectorAll('.fsb-region-gate-option');
+    for (var i = 0; i < opts.length; i++){
+      if ((opts[i].getAttribute('data-country') === 'HK') === wantHk){ pick(opts[i]); break; }
+    }
+    fsbGatePlaceSoon();
+  }
+  /* ---- where the popup lives ---------------------------------------------
+     It belongs to the sidebar, so it is anchored to the bar on the line of
+     the Language icon (the icon that opens the Region & Language drawer):
+       desktop -> right beside the bar (left of it when the bar is on the right)
+       mobile  -> just above the bottom bar, aligned with the same icon
+     If the bar is not on the page at all, it falls back to the centre. */
+  var gid  = (gate.id || '').replace('fsb-region-gate-', '');
+  var root = gid ? document.getElementById('sid-' + gid) : null;
+  var card = gate.querySelector('.fsb-region-gate-card');
+
+  function fsbGateRow(){
+    if (!root) return null;
+    var icons = root.querySelectorAll("[data-fsb-icon='region']");
+    for (var i = 0; i < icons.length; i++){
+      var el = icons[i];
+      var r = el.getBoundingClientRect();
+      var cs = window.getComputedStyle(el);
+      if (r.width < 2 || r.height < 2 || cs.display === 'none' || cs.visibility === 'hidden') continue;
+      return el.closest('.mobile-order-item') || el;
+    }
+    return null;
+  }
+  function fsbGatePlace(){
+    if (!card || gate.hidden) return;
+    var w = card.offsetWidth, h = card.offsetHeight;
+    if (!w || !h) return;
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var cont = root ? root.querySelector('.fsb-container') : null;
+    var cr = cont ? cont.getBoundingClientRect() : null;
+    var row = fsbGateRow();
+    var rr = row ? row.getBoundingClientRect() : null;
+    var mobile = window.matchMedia('(max-width: 767px)').matches;
+    var barOk = !!(cr && cr.width > 1 && cr.height > 1 && cr.right > 0 && cr.left < vw &&
+                   window.getComputedStyle(cont).display !== 'none');
+    var x, y;
+    if (barOk && mobile){
+      x = (rr ? rr.left : cr.left) - 6;
+      y = cr.top - h - 12;                       /* right above the bottom bar */
+    } else if (barOk){
+      var rightSide = (cr.left + cr.width / 2) > (vw / 2);
+      x = rightSide ? (cr.left - w - 14) : (cr.right + 14);
+      /* the popup's bottom ends where the sidebar bar ends */
+      y = (cr.top + cr.height) - h;
+    } else {
+      x = (vw - w) / 2; y = (vh - h) / 2;        /* no bar -> centre */
+    }
+    x = Math.max(8, Math.min(x, vw - w - 8));
+    y = Math.max(8, Math.min(y, vh - h - 8));
+    card.style.setProperty('--fsb-gate-x', Math.round(x) + 'px');
+    card.style.setProperty('--fsb-gate-y', Math.round(y) + 'px');
+  }
+  /* the bar animates its width when a drawer opens, so measure now and at rest */
+  function fsbGatePlaceSoon(){
+    fsbGatePlace();
+    window.requestAnimationFrame(fsbGatePlace);
+    window.requestAnimationFrame(function(){ window.requestAnimationFrame(fsbGatePlace); });
+    setTimeout(fsbGatePlace, 320);
+    setTimeout(fsbGatePlace, 580);
+  }
+  window.addEventListener('resize', fsbGatePlace);
+  window.addEventListener('orientationchange', fsbGatePlaceSoon);
+  /* the bar keeps moving for a moment after load (label mode switches on, the
+     drawer width animates), so watch it instead of trusting one measurement */
+  if (window.ResizeObserver){
+    var ro = new ResizeObserver(function(){ window.requestAnimationFrame(fsbGatePlace); });
+    [root, root && root.querySelector('.fsb-container'), fsbGateRow()].forEach(function(el){ if (el) ro.observe(el); });
+  }
+  if (window.MutationObserver){
+    new MutationObserver(function(){ fsbGatePlaceSoon(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+  }
+
+  function close(){
+    gate.hidden = true;
+    if (list){ list.hidden = true; }
+    if (trigger){ trigger.setAttribute('aria-expanded', 'false'); }
+  }
+  function pick(btn){
+    chosen = btn.getAttribute('data-country') || current;
+    var label = btn.getAttribute('data-label') || '';
+    if (valueEl && label) valueEl.textContent = label;
+    gate.querySelectorAll('.fsb-region-gate-option').forEach(function(b){
+      b.classList.toggle('is-current', b === btn);
+    });
+  }
+  function remember(region){
+    write(window.localStorage, 'fsb_selected_region', region);
+    write(window.localStorage, 'fsb_region_gate_at', String(Date.now()));
+    try {
+      document.cookie = '_shopify_country=' + encodeURIComponent(chosen) + '; path=/; max-age=31536000; SameSite=Lax';
+    } catch(e){}
+  }
+
+  if (trigger && list){
+    trigger.addEventListener('click', function(e){
+      e.preventDefault();
+      list.hidden = !list.hidden;
+      trigger.setAttribute('aria-expanded', list.hidden ? 'false' : 'true');
+    });
+  }
+  gate.querySelectorAll('.fsb-region-gate-option').forEach(function(btn){
+    btn.addEventListener('click', function(e){ e.preventDefault(); pick(btn); if (list){ list.hidden = true; } if (trigger){ trigger.setAttribute('aria-expanded', 'false'); } });
+  });
+  gate.querySelectorAll('[data-fsb-gate-skip]').forEach(function(el){
+    el.addEventListener('click', function(e){
+      e.preventDefault();
+      write(window.sessionStorage, 'fsb_region_gate_skip', '1');   /* session only */
+      close();
+    });
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && !gate.hidden){
+      write(window.sessionStorage, 'fsb_region_gate_skip', '1');
+      close();
+    }
+  });
+  if (continueEl){
+    continueEl.addEventListener('click', function(){
+      var isHk = (chosen === 'HK');
+      /* one selection everywhere: Region & Language drawer, Membership
+         drawer, backend and the browser memory all get the same value */
+      try {
+        if (typeof window.fsbSetRegion === 'function') window.fsbSetRegion(isHk ? 'HK' : 'INT');
+      } catch(e){}
+      remember(isHk ? 'HK' : 'INT');
+      if (!isHk){
+        /* International = the main domain: strip the Hong Kong subfolder */
+        var hkPfx = String((form && form.getAttribute('data-hk-path')) || '').replace(/\/+$/, '');
+        var hkPfxZh = String((form && form.getAttribute('data-hk-path-zh')) || '').replace(/\/+$/, '');
+        var lowNow = window.location.pathname.toLowerCase();
+        var onHkNow = window.fsbIsHk();   /* FIX v2 */
+        if (onHkNow){
+          var backUrl = window.location.origin + window.fsbIntRoot() + window.fsbSwapHkHandle(window.fsbCleanPath(), false) + window.location.search;   /* FIX v3 */
+          if (window.__fsbNavStub) { window.__fsbNavStub(backUrl); } else { window.location.href = backUrl; }
+          return;
+        }
+        /* already on the main domain: in-market country fallback when the
+           country actually differs and no subfolder setup exists */
+        if (!hkPfx && chosen !== current){
+          if (countryInp) countryInp.value = chosen;
+          var rt2 = form && form.querySelector('[name="return_to"]');
+          if (rt2) rt2.value = window.fsbCleanPath() + window.location.search;   /* FIX: clean path */
+          close();
+          if (form && typeof form.submit === 'function') form.submit();   /* Shopify /localization */
+          return;
+        }
+        close();                                        /* already on the International market */
+        return;
+      }
+      /* Hong Kong = the market's own subfolder (Chinese visitors get the Chinese one) */
+      var hkPath2 = String((form && form.getAttribute('data-hk-path')) || '').replace(/\/+$/, '');
+      var hkPathZh2 = String((form && form.getAttribute('data-hk-path-zh')) || '').replace(/\/+$/, '');
+      if (hkPath2) hkPath2 = window.fsbHkRoot();   /* FIX v2: keep current language */
+      if (hkPath2){
+        if (window.fsbIsHk()){
+          close(); return;                              /* already in the Hong Kong market */
+        }
+        var hkUrl = window.location.origin + hkPath2 + window.fsbSwapHkHandle(window.fsbCleanPath(), true) + window.location.search;   /* FIX v3 */
+        if (window.__fsbNavStub) { window.__fsbNavStub(hkUrl); } else { window.location.href = hkUrl; }
+        return;
+      }
+      if (current === 'HK'){ close(); return; }         /* already Hong Kong: nothing to switch */
+      if (countryInp) countryInp.value = 'HK';
+      var rt = form && form.querySelector('[name="return_to"]');
+      if (rt) rt.value = window.fsbCleanPath() + window.location.search;   /* FIX: clean path */
+      close();
+      if (form && typeof form.submit === 'function') form.submit();   /* Shopify /localization */
+    });
+  }
+  /* v10.5: the geo check (end of this file) decides between the silent
+     Hong Kong redirect and the popup. It opens the popup through
+     __fsbGateShow; this fallback opens it if the geo lookup is absent. */
+  window.__fsbGateShow = open;
+  window.setTimeout(function(){
+    if (!window.__fsbGateDecided && fresh()) open();
+  }, 2600);
+})();
+</script>
+
+<script>
+  /* ============================================================
+     v10.5 AUTO REGION (Shopify Markets + a one-time IP lookup):
+     - Hong Kong visitor -> straight to the Hong Kong market, no
+       popup on the way; after landing the region popup shows ONCE
+       to confirm they are shopping in the Hong Kong region.
+     - International visitor -> the region popup always shows so
+       they can choose themselves.
+     - A non-HK visitor sitting in the HK subfolder is returned to
+       the main domain and the popup greets them there.
+     The switch itself is Shopify Markets (the /en-hk subfolder),
+     the same way the region popup always did it. The IP lookup
+     runs only while no region was chosen yet.
+     ============================================================ */
+  (function(){
+    var gate = document.querySelector('.fsb-region-gate');
+    if (!gate) return;
+    if (window.Shopify && window.Shopify.designMode) return;
+    function lsGet(k){ try { return window.localStorage.getItem(k); } catch(e){ return null; } }
+    var gateForm = gate.querySelector('[data-fsb-gate-form]');
+    if (!gateForm){ window.__fsbGateDecided = true; return; }
+    var hkPath   = String(gateForm.getAttribute('data-hk-path')   || '').replace(/\/+$/, '');
+    var hkPathZh = String(gateForm.getAttribute('data-hk-path-zh') || '').replace(/\/+$/, '');
+    var low = window.location.pathname.toLowerCase();
+    function isUnder(path, pref){ var p = String(pref || '').toLowerCase(); return !!p && (path === p || path.indexOf(p + '/') === 0); }
+    var onHk = window.fsbIsHk();   /* FIX v2: /ja-hk, /ko-hk, /zh-hans-hk ... are Hong Kong too */
+    var saved = lsGet('fsb_selected_region');
+    if (saved){
+      window.__fsbGateDecided = true;
+      /* Login takes place on account.nextcigar.com; its return link can land
+         on the International root even when this browser chose Hong Kong.
+         Restore the saved MARKET path without repeating the IP lookup. The
+         same guard also respects an explicit International choice on HK URLs. */
+      var mismatch = (saved === 'HK' && !onHk && !!hkPath) || (saved === 'INT' && onHk);
+      if (mismatch){
+        var rest = window.location.pathname;
+        if (onHk){
+          if (isUnder(low, hkPath)) rest = rest.slice(hkPath.length) || '/';
+          else if (isUnder(low, hkPathZh)) rest = rest.slice(hkPathZh.length) || '/';
+        }
+        /* Avoid interfering with the external account / checkout handshake. */
+        if (!/^\/(?:account|checkouts?)(?:\/|$)/i.test(rest)){
+          var pref = (saved === 'HK') ? window.fsbHkRoot() : window.fsbIntRoot();   /* FIX v2: keep language */
+          var dest = window.location.origin + pref + window.fsbSwapHkHandle(window.fsbCleanPath(rest), saved === 'HK') + window.location.search + window.location.hash;   /* FIX v3 */
+          try {
+            var key = 'fsb_region_restore_attempt';
+            /* An unsuccessful redirect must never trap the customer in a loop. */
+            if (window.sessionStorage.getItem(key) !== dest){
+              window.sessionStorage.setItem(key, dest);
+              if (window.__fsbNavStub) window.__fsbNavStub(dest);
+              else window.location.href = dest;
+              return;
+            }
+          } catch(e){}   /* no session storage: don't risk a redirect loop */
+        }
+      } else {
+        try { window.sessionStorage.removeItem('fsb_region_restore_attempt'); } catch(e){}
+      }
+      /* The one-time HK confirmation belongs on the HK market, never on a
+         temporary International landing page during the login handoff. */
+      try {
+        if (saved === 'HK' && onHk && window.localStorage.getItem('fsb_gate_show_once') === '1'){
+          window.localStorage.removeItem('fsb_gate_show_once');
+          if (typeof window.__fsbGateShow === 'function') window.setTimeout(window.__fsbGateShow, 500);
+        } else if (saved !== 'HK'){
+          window.localStorage.removeItem('fsb_gate_show_once');
+        }
+      } catch(e){}
+      return;
+    }
+    var settled = false;
+    function showGate(){ try { if (typeof window.__fsbGateShow === 'function') window.__fsbGateShow(); } catch(e){} }
+    function finish(cc){
+      if (settled) return;
+      settled = true;
+      window.__fsbGateDecided = true;
+      if (!cc){ showGate(); return; }   /* geo failed: let the popup decide */
+      var wantHk = (String(cc).toUpperCase() === 'HK');
+      if (wantHk){
+        /* HONG KONG: straight to the HK market - no popup on the way */
+        try { if (typeof window.fsbSetRegion === 'function') window.fsbSetRegion('HK'); } catch(e){}
+        try {
+          window.localStorage.setItem('fsb_selected_region', 'HK');
+          window.localStorage.setItem('fsb_region_gate_at', String(Date.now()));
+        } catch(e){}
+        if (onHk){
+          /* already shopping in Hong Kong: confirm it with the popup once */
+          setTimeout(showGate, 400);
+          return;
+        }
+        if (!hkPath){ return; }
+        /* show the confirmation popup once, after landing in HK */
+        try { window.localStorage.setItem('fsb_gate_show_once', '1'); } catch(e){}
+        var pref = window.fsbHkRoot();   /* FIX v2: keep language */
+        var hkUrl = window.location.origin + pref + window.fsbSwapHkHandle(window.fsbCleanPath(), true) + window.location.search;   /* FIX v3 */
+        try { if (window.__fsbNavStub) { window.__fsbNavStub(hkUrl); return; } } catch(e){}
+        window.location.href = hkUrl;
+        return;
+      }
+      /* INTERNATIONAL: never auto-decide - the popup always shows */
+      try { window.sessionStorage.removeItem('fsb_region_gate_skip'); } catch(e){}
+      if (onHk){
+        /* misrouted: back to the main domain; the popup greets them there */
+        var rest = window.location.pathname;
+        if (isUnder(low, hkPath))        rest = window.location.pathname.slice(hkPath.length) || '/';
+        else if (isUnder(low, hkPathZh)) rest = window.location.pathname.slice(hkPathZh.length) || '/';
+        var intUrl = window.location.origin + window.fsbIntRoot() + window.fsbSwapHkHandle(window.fsbCleanPath(rest), false) + window.location.search;   /* FIX v3 */
+        try { if (window.__fsbNavStub) { window.__fsbNavStub(intUrl); return; } } catch(e){}
+        window.location.href = intUrl;
+        return;
+      }
+      setTimeout(showGate, 200);
+    }
+    function jsonCountry(url, pick){
+      return fetch(url, { cache: 'no-store' })
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(d){ return d ? pick(d) : null; })
+        .catch(function(){ return null; });
+    }
+    jsonCountry('https://get.geojs.io/v1/ip/country.json', function(d){ return d.country; })
+      .then(function(cc){ return cc || jsonCountry('https://api.country.is/', function(d){ return d.country; }); })
+      .then(finish);
+    /* lookup hanging? decide nothing, let the popup open itself */
+    setTimeout(function(){
+      if (!settled){ settled = true; window.__fsbGateDecided = true; showGate(); }
+    }, 2500);
+  })();
+
+  /* ============================================================
+     v10 ADDRESS SAVE: saving an address inside the drawer must NOT
+     navigate to the account addresses page. The form goes out with
+     fetch, the drawer stays, the lists refresh in place and the
+     drawer returns to the Address Book. On any error the form falls
+     back to the normal submit with return_to = the same page.
+     ============================================================ */
+  (function(){
+    function refreshLists(){
+      return fetch(window.location.href, { credentials: 'same-origin' })
+        .then(function(r){ return r.ok ? r.text() : null; })
+        .then(function(html){
+          if (!html) return false;
+          var doc = new DOMParser().parseFromString(html, 'text/html');
+          var sels = [
+            '.fsb-side-panel[data-fsb-panel="address"] .fsb-panel-body',
+            '.fsb-account-pane[data-account-pane="address"]'
+          ];
+          var swapped = false;
+          for (var i = 0; i < sels.length; i++){
+            var freshEl = doc.querySelector(sels[i]);
+            var mine = document.querySelectorAll(sels[i]);
+            if (freshEl && mine.length){
+              for (var j = 0; j < mine.length; j++){ mine[j].innerHTML = freshEl.innerHTML; }
+              swapped = true;
+            }
+          }
+          return swapped;
+        })
+        .catch(function(){ return false; });
+    }
+    function backToAddressBook(panel){
+      if (!panel) return;
+      var back = panel.querySelector('.fsb-panel-back');
+      if (back){ back.click(); return; }
+      var closeBtn = panel.querySelector('[data-fsb-close]');
+      if (closeBtn) closeBtn.click();
+    }
+    document.addEventListener('submit', function(e){
+      var form = e.target;
+      if (!form || !form.matches) return;
+      if (!form.matches('.fsb-side-panel form[action*="/account/addresses"]')) return;
+      var rt = form.querySelector('[data-fsb-return-to]');
+      if (rt) rt.value = window.location.pathname + window.location.search;
+      e.preventDefault();
+      fetch(form.action, {
+        method: 'POST',
+        body: new FormData(form),
+        credentials: 'same-origin',
+        redirect: 'manual',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      }).then(function(resp){
+        if (resp.type === 'opaqueredirect' || resp.status === 0){
+          return refreshLists().then(function(){
+            backToAddressBook(form.closest('.fsb-side-panel'));
+          });
+        }
+        /* error: normal submit, Shopify shows the error page (same page) */
+        if (rt) rt.removeAttribute('name');
+        HTMLFormElement.prototype.submit.call(form);
+      }).catch(function(){
+        if (rt) rt.removeAttribute('name');
+        HTMLFormElement.prototype.submit.call(form);
+      });
+    }, true);
+  })();
+
+  /* v10.10: this snippet renders in the header, but Shopify puts the
+     #Cart-Drawer markup near the end of <body>. Bind AFTER it exists, not
+     only at header parse-time; otherwise fsb-cart-open never gets set and
+     the theme's transparent page overlay steals wheel/touch scrolling after
+     an AJAX add. This only mirrors the drawer's active class, NEVER reopens
+     a drawer the customer closed. */
+  (function(){
+    var drawer = null;
+    var body = document.body;
+    var drawerObserver = null;
+    var wasOpen = false;
+    function syncClass(){
+      var open = !!(drawer && drawer.isConnected && drawer.classList.contains('active'));
+      body.classList.toggle('fsb-cart-open', open);
+      /* Native/theme add, native close, cart icon and drawer switching are
+         all tracked here; the first script owns storage and close semantics. */
+      document.dispatchEvent(new CustomEvent('fsb:cart-state', {
+        detail: { open: open, wasOpen: wasOpen }
+      }));
+      wasOpen = open;
+    }
+    function bindDrawer(){
+      var found = document.getElementById('Cart-Drawer');
+      if (!found) return;
+      if (drawer !== found){
+        if (drawerObserver) drawerObserver.disconnect();
+        drawer = found;
+        if (window.MutationObserver){
+          drawerObserver = new MutationObserver(syncClass);
+          drawerObserver.observe(drawer, { attributes: true, attributeFilter: ['class'] });
+        }
+      }
+      syncClass();
+    }
+    if (document.readyState === 'loading'){
+      document.addEventListener('DOMContentLoaded', bindDrawer, { once: true });
+    }
+    bindDrawer();
+    document.addEventListener('cart-drawer:open', bindDrawer);
+    document.addEventListener('cart:item-added', bindDrawer);
+    document.addEventListener('shopify:section:load', bindDrawer);
+    /* Another sidebar icon takes over the drawer. The Cart icon is excluded:
+       its own handler must see an OPEN drawer so the first tap CLOSES it. */
+    document.addEventListener('click', function(e){
+      var current = document.getElementById('Cart-Drawer');
+      if (!current || !current.classList.contains('active')) return;
+      var icon = e.target && e.target.closest ? e.target.closest('[data-fsb-icon]') : null;
+      if (!icon || icon.getAttribute('data-fsb-icon') === 'cart') return;
+      current.classList.remove('active');
+      body.classList.remove('open-cc');
+    }, true);
+  })();
 </script>
